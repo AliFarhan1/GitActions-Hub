@@ -1,105 +1,19 @@
 import Foundation
+import SwiftUI
 
-// MARK: - Models
-struct Repo: Codable, Identifiable {
-    let id: Int
-    let name: String
-    let full_name: String
-    let owner: RepoOwner
-    let html_url: String
-    let description: String?
-    let private_field: Bool?
-    let default_branch: String?
-    let size: Int?
-    let language: String?
-    let updated_at: String?
-    
-    enum CodingKeys: String, CodingKey {
-        case id, name, full_name, owner, html_url, description, size, language, updated_at
-        case private_field = "private"
-        case default_branch
-    }
-    
-    var isPrivate: Bool { private_field ?? false }
-}
-
-struct RepoOwner: Codable {
-    let login: String
-    let avatar_url: String?
-}
-
-struct WorkflowRun: Codable, Identifiable {
-    let id: Int
-    let name: String
-    let head_branch: String
-    let status: String
-    let conclusion: String?
-    let created_at: String
-    let updated_at: String
-    let html_url: String
-    let head_sha: String?
-    let event: String?
-    
-    var displayStatus: String {
-        switch status {
-        case "queued": return "⏳ في الانتظار"
-        case "in_progress": return "🔄 قيد التنفيذ"
-        case "completed": return "✅ مكتمل"
-        case "waiting": return "⏸️ بانتظار الموافقة"
-        default: return status
-        }
-    }
-    
-    var displayConclusion: String {
-        switch conclusion {
-        case "success": return "✅ نجاح"
-        case "failure": return "❌ فشل"
-        case "cancelled": return "🚫 ملغى"
-        case "skipped": return "⏭️ متخطى"
-        case "timed_out": return "⏰ انتهت المهلة"
-        case "action_required": return "⚠️ يتطلب إجراء"
-        case nil: return ""
-        default: return conclusion ?? ""
-        }
-    }
-    
-    var isRunning: Bool {
-        return status == "in_progress" || status == "queued" || status == "waiting"
-    }
-}
-
-struct WorkflowRunsResponse: Codable {
-    let total_count: Int
-    let workflow_runs: [WorkflowRun]
-}
-
-struct LogLine: Identifiable {
-    let id: Int
-    let text: String
-    var isError: Bool { text.contains("error:") || text.contains("Error:") || text.contains("ERROR:") }
-    var isWarning: Bool { text.contains("warning:") || text.contains("Warning:") || text.contains("WARN:") }
-    var isCommand: Bool { text.hasPrefix("$") || text.hasPrefix("+ ") }
-}
-
-struct GitHubContent: Codable {
-    let name: String
-    let path: String
-    let sha: String?
-    let `type`: String
-    let content: String?
-    let encoding: String?
-    let size: Int?
-}
-
-// MARK: - GitHub Service
 class GitHubService: ObservableObject {
     
+    // MARK: - Published Properties
     @Published var repos: [Repo] = []
     @Published var workflowRuns: [WorkflowRun] = []
     @Published var logLines: [LogLine] = []
     @Published var error: String?
     @Published var isLoading = false
     @Published var lastCommitResult: String?
+    
+    // ✅ خصائص مفقودة تستخدمها Views القديمة
+    @Published var currentUser: GitHubUser?
+    @Published var isAuthenticated: Bool = false
     
     // ✅ حالة الرفع
     @Published var isPushing = false
@@ -109,41 +23,19 @@ class GitHubService: ObservableObject {
     
     private let baseURL = "https://api.github.com"
     
-    var token: String {
+    // MARK: - Token Management
+    private var _token: String {
         UserDefaults.standard.string(forKey: "gh_access_token") ?? ""
     }
     
-    var isAuthenticated: Bool {
-        !token.isEmpty
-    }
+    var token: String { _token }
     
     var username: String {
         UserDefaults.standard.string(forKey: "gh_username") ?? ""
     }
     
-    // MARK: - Token Validation
-    func validateToken(_ token: String) async -> Bool {
-        var req = URLRequest(url: URL(string: "\(baseURL)/user")!)
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        
-        do {
-            let (_, response) = try await URLSession.shared.data(for: req)
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                // حفظ اسم المستخدم
-                var req2 = URLRequest(url: URL(string: "\(baseURL)/user")!)
-                req2.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                req2.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-                let (data, _) = try await URLSession.shared.data(for: req2)
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let login = json["login"] as? String {
-                    UserDefaults.standard.set(login, forKey: "gh_username")
-                }
-                return true
-            }
-        } catch {}
-        return false
-    }
+    // ✅ Alias للخصائص — تستخدمها Views القديمة
+    var repositories: [GitHubRepo] { repos }
     
     // MARK: - Generic Request Helper
     private func makeRequest(_ path: String, method: String = "GET", body: Data? = nil) -> URLRequest {
@@ -155,6 +47,117 @@ class GitHubService: ObservableObject {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let body = body { req.httpBody = body }
         return req
+    }
+    
+    // MARK: - ✅ loadSavedToken — تستخدمها ContentView
+    func loadSavedToken() {
+        let savedToken = UserDefaults.standard.string(forKey: "gh_access_token")
+        if let token = savedToken, !token.isEmpty {
+            isAuthenticated = true
+            // تحميل بيانات المستخدم المحفوظة
+            loadSavedUser()
+        } else {
+            isAuthenticated = false
+            currentUser = nil
+        }
+    }
+    
+    private func loadSavedUser() {
+        guard let userData = UserDefaults.standard.data(forKey: "gh_user_data") else { return }
+        currentUser = try? JSONDecoder().decode(GitHubUser.self, from: userData)
+    }
+    
+    private func saveUser(_ user: GitHubUser) {
+        if let data = try? JSONEncoder().encode(user) {
+            UserDefaults.standard.set(data, forKey: "gh_user_data")
+        }
+        UserDefaults.standard.set(user.login, forKey: "gh_username")
+    }
+    
+    // MARK: - ✅ authenticateWithOAuth — تستخدمها LoginView
+    func authenticateWithOAuth(token: String) async {
+        guard !token.isEmpty else {
+            await MainActor.run { self.error = "❌ التوكن فارغ" }
+            return
+        }
+        
+        // حفظ التوكن
+        UserDefaults.standard.set(token, forKey: "gh_access_token")
+        
+        // التحقق من التوكن وجلب بيانات المستخدم
+        var req = URLRequest(url: URL(string: "\(baseURL)/user")!)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: req)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                await MainActor.run { self.error = "❌ استجابة غير صالحة" }
+                return
+            }
+            
+            if httpResponse.statusCode == 200 {
+                let user = try JSONDecoder().decode(GitHubUser.self, from: data)
+                await MainActor.run {
+                    self.currentUser = user
+                    self.isAuthenticated = true
+                    self.error = nil
+                }
+                saveUser(user)
+            } else {
+                // التوكن غير صالح
+                UserDefaults.standard.removeObject(forKey: "gh_access_token")
+                await MainActor.run {
+                    self.currentUser = nil
+                    self.isAuthenticated = false
+                    self.error = "❌ التوكن غير صالح"
+                }
+            }
+        } catch {
+            await MainActor.run {
+                self.error = "❌ فشل الاتصال: \(error.localizedDescription)"
+            }
+        }
+    }
+    
+    // MARK: - ✅ logout — تستخدمها ReposView
+    func logout() {
+        UserDefaults.standard.removeObject(forKey: "gh_access_token")
+        UserDefaults.standard.removeObject(forKey: "gh_user_data")
+        UserDefaults.standard.removeObject(forKey: "gh_username")
+        currentUser = nil
+        isAuthenticated = false
+        repos = []
+        workflowRuns = []
+        logLines = []
+        error = nil
+    }
+    
+    // MARK: - Token Validation
+    func validateToken(_ token: String) async -> Bool {
+        var req = URLRequest(url: URL(string: "\(baseURL)/user")!)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: req)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                let user = try JSONDecoder().decode(GitHubUser.self, from: data)
+                await MainActor.run {
+                    self.currentUser = user
+                    self.isAuthenticated = true
+                }
+                saveUser(user)
+                return true
+            }
+        } catch {}
+        return false
+    }
+    
+    // MARK: - ✅ fetchRepositories — Alias تستخدمها Views القديمة
+    func fetchRepositories() async {
+        await fetchRepos()
     }
     
     // MARK: - Fetch Repos
@@ -175,11 +178,10 @@ class GitHubService: ObservableObject {
                     return
                 }
                 
-                let repos = try JSONDecoder().decode([Repo].self, from: data)
-                allRepos.append(contentsOf: repos)
+                let pageRepos = try JSONDecoder().decode([Repo].self, from: data)
+                allRepos.append(contentsOf: pageRepos)
                 
-                // التحقق من وجود صفحة تالية
-                if repos.count < 100 { break }
+                if pageRepos.count < 100 { break }
                 page += 1
             } catch {
                 await MainActor.run { self.error = "تعذّر جلب المستودعات: \(error.localizedDescription)"; isLoading = false }
@@ -187,7 +189,10 @@ class GitHubService: ObservableObject {
             }
         } while true
         
-        await MainActor.run { repos = allRepos; isLoading = false }
+        await MainActor.run {
+            self.repos = allRepos
+            self.isLoading = false
+        }
     }
     
     // MARK: - Fetch Workflow Runs
@@ -214,24 +219,18 @@ class GitHubService: ObservableObject {
     func fetchLogs(owner: String, repo: String, runId: Int) async {
         await MainActor.run { isLoading = true; logLines = []; error = nil }
         
-        // 1. جلب Jobs
         let jobsReq = makeRequest("/repos/\(owner)/\(repo)/actions/runs/\(runId)/jobs")
         do {
             let (jobsData, _) = try await URLSession.shared.data(for: jobsReq)
             guard let jobsJson = try? JSONSerialization.jsonObject(with: jobsData) as? [String: Any],
                   let jobs = jobsJson["jobs"] as? [[String: Any]],
-                  let firstJob = jobs.first else {
+                  let firstJob = jobs.first,
+                  let jobId = firstJob["id"] as? Int else {
                 await MainActor.run { error = "❌ لا توجد مهام"; isLoading = false }
                 return
             }
             
-            guard let logsUrlString = firstJob["url"] as? String else {
-                await MainActor.run { error = "❌ لا يوجد رابط للسجلات"; isLoading = false }
-                return
-            }
-            
-            // 2. جلب Logs
-            let logsReq = makeRequest("/repos/\(owner)/\(repo)/actions/jobs/\(firstJob["id"] ?? 0)/logs")
+            let logsReq = makeRequest("/repos/\(owner)/\(repo)/actions/jobs/\(jobId)/logs")
             let (logsData, _) = try await URLSession.shared.data(for: logsReq)
             
             guard let logText = String(data: logsData, encoding: .utf8) else {
@@ -251,7 +250,37 @@ class GitHubService: ObservableObject {
         }
     }
     
-    // MARK: - ✅ رفع الملفات — Contents API (الطريقة الأساسية)
+    // MARK: - Fetch Jobs for a Run ✅
+    func fetchJobs(owner: String, repo: String, runId: Int) async -> [WorkflowJob] {
+        let req = makeRequest("/repos/\(owner)/\(repo)/actions/runs/\(runId)/jobs")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else { return [] }
+            let result = try JSONDecoder().decode(WorkflowJobsResponse.self, from: data)
+            return result.jobs
+        } catch {
+            return []
+        }
+    }
+    
+    // MARK: - Fetch Job Logs ✅
+    func fetchJobLogs(owner: String, repo: String, jobId: Int) async -> [BuildLog] {
+        let req = makeRequest("/repos/\(owner)/\(repo)/actions/jobs/\(jobId)/logs")
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            guard let logText = String(data: data, encoding: .utf8) else { return [] }
+            
+            let lines = logText.components(separatedBy: "\n")
+            return lines.enumerated().map { index, line in
+                BuildLog(id: index, lineNumber: index + 1, text: line, timestamp: nil)
+            }
+        } catch {
+            return []
+        }
+    }
+    
+    // MARK: - ✅ رفع الملفات — Contents API
     func pushFiles(
         owner: String,
         repo: String,
@@ -299,212 +328,4 @@ class GitHubService: ObservableObject {
                 owner: owner,
                 repo: repo,
                 branch: branch,
-                message: "\(message) — \(file.path)",
-                file: file
-            )
-            
-            if success {
-                successCount += 1
-            } else {
-                failCount += 1
-                failedFiles.append(file.path)
-            }
-        }
-        
-        await MainActor.run {
-            isPushing = false
-            
-            if failCount == 0 {
-                lastCommitResult = "✅ تم رفع \(successCount) ملف بنجاح!"
-                fileManager.clearModifications()
-            } else if successCount > 0 {
-                lastCommitResult = "⚠️ تم رفع \(successCount) ملف، فشل \(failCount)"
-                error = "الملفات التي فشلت: \(failedFiles.joined(separator: ", "))"
-                fileManager.clearModifications()
-            } else {
-                lastCommitResult = "❌ فشل رفع جميع الملفات"
-                error = "فشل رفع: \(failedFiles.joined(separator: ", "))"
-            }
-            
-            pushProgress = ""
-        }
-        
-        return successCount > 0
-    }
-    
-    // MARK: - ✅ رفع ملف واحد — Contents API
-    private func uploadSingleFile(
-        owner: String,
-        repo: String,
-        branch: String,
-        message: String,
-        file: FileToPush
-    ) async -> Bool {
-        let encodedPath = file.path
-            .replacingOccurrences(of: " ", with: "%20")
-            .replacingOccurrences(of: "[", with: "%5B")
-            .replacingOccurrences(of: "]", with: "%5D")
-        
-        let urlString = "\(baseURL)/repos/\(owner)/\(repo)/contents/\(encodedPath)?ref=\(branch)"
-        
-        // ✅ الخطوة 1: التحقق من وجود الملف مسبقاً
-        let existingSHA = await getFileSHA(owner: owner, repo: repo, path: file.path, branch: branch)
-        
-        // ✅ الخطوة 2: رفع أو تحديث الملف
-        guard let url = URL(string: urlString) else { return false }
-        var req = URLRequest(url: url)
-        req.httpMethod = "PUT"
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        var body: [String: Any] = [
-            "message": message,
-            "branch": branch,
-            "content": file.content // Base64 للثنائية، نص عادي للنصية
-        ]
-        
-        // ✅ إذا الملف موجود، أضف SHA للتحديث
-        if let sha = existingSHA {
-            body["sha"] = sha
-        }
-        
-        do {
-            req.httpBody = try JSONSerialization.data(withJSONObject: body)
-            let (_, response) = try await URLSession.shared.data(for: req)
-            
-            if let httpResponse = response as? HTTPURLResponse {
-                switch httpResponse.statusCode {
-                case 200, 201:
-                    return true
-                case 409:
-                    // تعارض — الريبو تم تحديثه
-                    await MainActor.run { error = "❌ تعارض — تم تحديث المستودع. حاول مجدداً." }
-                    return false
-                case 403:
-                    await MainActor.run { error = "❌ ليس لديك صلاحية الكتابة على هذا المستودع" }
-                    return false
-                case 404:
-                    // ✅ المستودع قد يكون فارغ — نحاول إنشاء ملف أولي
-                    return await handleEmptyRepo(owner: owner, repo: repo, branch: branch, file: file)
-                case 422:
-                    // خطأ في البيانات — ربما محتوى Base64 غير صالح
-                    await MainActor.run { error = "❌ خطأ في بيانات الملف: \(file.path)" }
-                    return false
-                case 413:
-                    await MainActor.run { error = "❌ الملف太大 حجمه: \(file.path)" }
-                    return false
-                default:
-                    return false
-                }
-            }
-        } catch {
-            return false
-        }
-        
-        return false
-    }
-    
-    // MARK: - ✅ الحصول على SHA لملف موجود
-    private func getFileSHA(owner: String, repo: String, path: String, branch: String) async -> String? {
-        let encodedPath = path
-            .replacingOccurrences(of: " ", with: "%20")
-            .replacingOccurrences(of: "[", with: "%5B")
-            .replacingOccurrences(of: "]", with: "%5D")
-        
-        let req = makeRequest("/repos/\(owner)/\(repo)/contents/\(encodedPath)?ref=\(branch)")
-        
-        do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else { return nil }
-            
-            let content = try JSONDecoder().decode(GitHubContent.self, from: data)
-            return content.sha
-        } catch {
-            return nil
-        }
-    }
-    
-    // MARK: - ✅ معالجة المستودع الفارغ
-    private func handleEmptyRepo(
-        owner: String,
-        repo: String,
-        branch: String,
-        file: FileToPush
-    ) async -> Bool {
-        // محاولة إنشاء الملف مباشرة بدون SHA
-        let encodedPath = file.path
-            .replacingOccurrences(of: " ", with: "%20")
-            .replacingOccurrences(of: "[", with: "%5B")
-            .replacingOccurrences(of: "]", with: "%5D")
-        
-        guard let url = URL(string: "\(baseURL)/repos/\(owner)/\(repo)/contents/\(encodedPath)") else { return false }
-        var req = URLRequest(url: url)
-        req.httpMethod = "PUT"
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        let body: [String: Any] = [
-            "message": "Initial commit — \(file.path)",
-            "branch": branch,
-            "content": file.content
-        ]
-        
-        do {
-            req.httpBody = try JSONSerialization.data(withJSONObject: body)
-            let (_, response) = try await URLSession.shared.data(for: req)
-            
-            if let httpResponse = response as? HTTPURLResponse,
-               (200...299).contains(httpResponse.statusCode) {
-                return true
-            }
-        } catch {}
-        
-        return false
-    }
-    
-    // MARK: - ✅ الحصول على الفرع الافتراضي
-    func getDefaultBranch(owner: String, repo: String) async -> String {
-        let req = makeRequest("/repos/\(owner)/\(repo)")
-        do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else { return "main" }
-            
-            let repo = try JSONDecoder().decode(Repo.self, from: data)
-            return repo.default_branch ?? "main"
-        } catch {
-            return "main"
-        }
-    }
-    
-    // MARK: - Re-run Workflow
-    func reRunWorkflow(owner: String, repo: String, runId: Int) async {
-        let req = makeRequest("/repos/\(owner)/\(repo)/actions/runs/\(runId)/rerun", method: "POST")
-        _ = try? await URLSession.shared.data(for: req)
-    }
-    
-    // MARK: - Cancel Workflow
-    func cancelWorkflow(owner: String, repo: String, runId: Int) async {
-        let req = makeRequest("/repos/\(owner)/\(repo)/actions/runs/\(runId)/cancel", method: "POST")
-        _ = try? await URLSession.shared.data(for: req)
-    }
-    
-    // MARK: - ✅ الحصول على ملفات الريبو البعيدة (لمقارنة التغييرات)
-    func fetchRemoteFiles(owner: String, repo: String, path: String = "", branch: String = "main") async -> [GitHubContent] {
-        let encodedPath = path.isEmpty ? "" : "/\(path)"
-        let req = makeRequest("/repos/\(owner)/\(repo)/contents\(encodedPath)?ref=\(branch)")
-        
-        do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else { return [] }
-            
-            return try JSONDecoder().decode([GitHubContent].self, from: data)
-        } catch {
-            return []
-        }
-    }
-}
+                message: "\(message) — \(file.path
