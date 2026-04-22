@@ -22,10 +22,7 @@ struct FileToPush: Identifiable {
     let size: Int64
 }
 
-// MARK: - GitHubRepo (الاسم الأصلي المستخدم في Views)
-typealias GitHubRepo = Repo
-
-// MARK: - Repo
+// MARK: - Repo (GitHubRepo alias)
 struct Repo: Codable, Identifiable {
     let id: Int
     let name: String
@@ -49,7 +46,14 @@ struct Repo: Codable, Identifiable {
     }
     
     var isPrivate: Bool { private_field ?? false }
+    
+    // ✅ Aliases تستخدمها Views
+    var fullName: String { full_name }
+    var stargazersCount: Int { stargazers_count ?? 0 }
+    var forksCount: Int { forks_count ?? 0 }
 }
+
+typealias GitHubRepo = Repo
 
 // MARK: - RepoOwner
 struct RepoOwner: Codable {
@@ -86,40 +90,45 @@ struct WorkflowRun: Codable, Identifiable {
     
     var displayStatus: String {
         switch status {
-        case "queued": return "⏳ في الانتظار"
-        case "in_progress": return "🔄 قيد التنفيذ"
-        case "completed": return "✅ مكتمل"
-        case "waiting": return "⏸️ بانتظار الموافقة"
+        case "queued": return "⏳"
+        case "in_progress": return "🔄"
+        case "completed": return "✅"
         default: return status
         }
     }
     
     var displayConclusion: String {
         switch conclusion {
-        case "success": return "✅ نجاح"
-        case "failure": return "❌ فشل"
-        case "cancelled": return "🚫 ملغى"
-        case "skipped": return "⏭️ متخطى"
-        case "timed_out": return "⏰ انتهت المهلة"
-        case "action_required": return "⚠️ يتطلب إجراء"
-        case nil: return ""
+        case "success": return "✅"
+        case "failure": return "❌"
+        case "cancelled": return "🚫"
         default: return conclusion ?? ""
         }
     }
     
     var isRunning: Bool {
-        return status == "in_progress" || status == "queued" || status == "waiting"
+        status == "in_progress" || status == "queued" || status == "waiting"
     }
     
-    // ✅ الخاصية المفقودة التي تستخدمها ActionsView
+    // ✅ statusColor
     var statusColor: Color {
         switch status {
         case "completed":
-            return conclusion == "success" ? Color(hex: "#6BCB77") : Color(hex: "#FF6B6B")
-        case "in_progress": return Color(hex: "#6C63FF")
-        case "queued": return Color(hex: "#FFD93D")
-        case "waiting": return Color(hex: "#FFD93D")
-        default: return Color(hex: "#8888A0")
+            return conclusion == "success" ? Color(hex: "6BCB77") : Color(hex: "FF6B6B")
+        case "in_progress": return Color(hex: "6C63FF")
+        case "queued": return Color(hex: "FFD93D")
+        default: return Color(hex: "8888A0")
+        }
+    }
+    
+    // ✅ statusIcon
+    var statusIcon: String {
+        switch status {
+        case "completed":
+            return conclusion == "success" ? "checkmark.circle.fill" : "xmark.circle.fill"
+        case "in_progress": return "arrow.triangle.2.circlepath"
+        case "queued": return "clock.fill"
+        default: return "questionmark.circle"
         }
     }
 }
@@ -139,15 +148,6 @@ struct WorkflowJob: Codable, Identifiable {
     let started_at: String?
     let completed_at: String?
     let steps: [WorkflowStep]?
-    
-    var displayStatus: String {
-        switch status {
-        case "queued": return "⏳"
-        case "in_progress": return "🔄"
-        case "completed": return conclusion == "success" ? "✅" : "❌"
-        default: return "•"
-        }
-    }
 }
 
 // MARK: - WorkflowStep
@@ -158,21 +158,10 @@ struct WorkflowStep: Codable, Identifiable {
     let conclusion: String?
     let started_at: String?
     let completed_at: String?
-    
     var id: Int { number }
-    
-    var displayConclusion: String {
-        switch conclusion {
-        case "success": return "✅"
-        case "failure": return "❌"
-        case "skipped": return "⏭️"
-        case "cancelled": return "🚫"
-        default: return "•"
-        }
-    }
 }
 
-// MARK: - Jobs Response
+// MARK: - WorkflowJobsResponse
 struct WorkflowJobsResponse: Codable {
     let total_count: Int
     let jobs: [WorkflowJob]
@@ -192,12 +181,16 @@ struct BuildLog: Identifiable {
         case normal
     }
     
-    var lineType: LogLineType {
+    // ✅ type — تستخدمها ActionsView
+    var type: LogLineType {
         if text.contains("error:") || text.contains("Error:") || text.contains("ERROR:") { return .error }
         if text.contains("warning:") || text.contains("Warning:") || text.contains("WARN:") { return .warning }
         if text.hasPrefix("$") || text.hasPrefix("+ ") { return .command }
         return .normal
     }
+    
+    // ✅ content — تستخدمها ActionsView
+    var content: String { text }
 }
 
 // MARK: - GitHubContent
@@ -211,11 +204,11 @@ struct GitHubContent: Codable {
     let size: Int?
 }
 
-// MARK: - LogLine (للسجلات المبسطة)
+// MARK: - LogLine
 struct LogLine: Identifiable {
     let id: Int
     let text: String
-    var isError: Bool { text.contains("error:") || text.contains("Error:") || text.contains("ERROR:") }
-    var isWarning: Bool { text.contains("warning:") || text.contains("Warning:") || text.contains("WARN:") }
+    var isError: Bool { text.contains("error:") || text.contains("Error:") }
+    var isWarning: Bool { text.contains("warning:") || text.contains("Warning:") }
     var isCommand: Bool { text.hasPrefix("$") || text.hasPrefix("+ ") }
 }
