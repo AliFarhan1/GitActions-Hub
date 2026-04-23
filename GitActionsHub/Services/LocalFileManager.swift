@@ -24,11 +24,10 @@ class LocalFileManager: ObservableObject {
 
     static var appDocumentsURL: URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let projects = docs.appendingPathComponent("Projects", isDirectory: true)
-        if !FileManager.default.fileExists(atPath: projects.path) {
-            try? FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        if !FileManager.default.fileExists(atPath: docs.path) {
+            try? FileManager.default.createDirectory(at: docs, withIntermediateDirectories: true)
         }
-        return projects
+        return docs
     }
 
     init() {
@@ -40,7 +39,7 @@ class LocalFileManager: ObservableObject {
     private func createWelcomeFileIfNeeded() {
         let path = currentPath.appendingPathComponent("README.txt")
         guard !fm.fileExists(atPath: path.path) else { return }
-        let txt = "GitActions Hub\n==============\nPlace your project files here.\nFiles > On My iPhone > GitActionsHub > Projects"
+        let txt = "GitActions Hub\n==============\nImport repositories from Repos tab.\nLong press on a repo > Import to Files"
         try? txt.write(to: path, atomically: true, encoding: .utf8)
     }
 

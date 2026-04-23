@@ -176,6 +176,57 @@ class GitHubService: ObservableObject {
         if lower.contains("##[") || lower.contains("::notice") { return .info }
         return .normal
     }
+    
+    func fetchRepoTree(owner: String, repo: String, branch: String = "main") async throws -> [RepoFile] {
+        struct ContentsResponse: Codable {
+            let type: String
+            let name: String
+            let path: String
+            let content: String?
+            let sha: String?
+            let size: Int?
+            enum CodingKeys: String, CodingKey {
+                case type, name, path, content, sha, size
+            }
+        }
+        
+        var allFiles: [RepoFile] = []
+        
+        func fetchContents(path: String) async throws {
+            let endpoint = "/repos/\(owner)/\(repo)/contents/\(path)?ref=\(branch)"
+            let contents: [ContentsResponse] = try await makeRequest(endpoint: endpoint)
+            
+            for item in contents {
+                if item.type == "dir" {
+                    try await fetchContents(path: item.path)
+                } else if item.type == "file", let contentB64 = item.content {
+                    let cleanContent = contentB64
+                        .replacingOccurrences(of: "\n", with: "")
+                        .replacingOccurrences(of: "\r", with: "")
+                    if let data = Data(base64Encoded: cleanContent),
+                       let decoded = String(data: data, encoding: .utf8) {
+                        allFiles.append(RepoFile(
+                            name: item.name,
+                            path: item.path,
+                            content: decoded,
+                            size: item.size ?? 0
+                        ))
+                    }
+                }
+            }
+        }
+        
+        try await fetchContents(path: "")
+        return allFiles
+    }
+}
+
+struct RepoFile: Identifiable {
+    let id = UUID()
+    var name: String
+    var path: String
+    var content: String
+    var size: Int
 }
 
 struct EmptyResponse: Codable {}

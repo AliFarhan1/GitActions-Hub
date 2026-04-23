@@ -129,6 +129,7 @@ struct ReposView: View {
             }, onDismiss: {
                 selectedRepoForMenu = nil
             })
+            .environmentObject(gitHubService)
         }
         .alert("Delete Repository", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) {
@@ -409,10 +410,14 @@ struct ProfileView: View {
 }
 
 struct ContextMenuSheet: View {
+    @EnvironmentObject var gitHubService: GitHubService
+    @StateObject private var fileManager = LocalFileManager()
     let repo: GitHubRepo?
     let onDelete: (GitHubRepo) -> Void
     let onRename: (GitHubRepo) -> Void
     let onDismiss: () -> Void
+    @State private var isImporting = false
+    @State private var importProgress = ""
     @Environment(\.dismiss) var dismiss
     
     var body: some View {
@@ -436,35 +441,86 @@ struct ContextMenuSheet: View {
                 .padding()
                 Divider().background(AppColors.border)
                 
-                VStack(spacing: 12) {
-                    if let repo = repo {
-                        menuButton(icon: "arrow.down.circle.fill", color: Color(hex: "#6BCB77"), label: "Import to Files") {
-                            // TODO: Import repo files
-                        }
-                        
-                        menuButton(icon: "pencil.circle.fill", color: AppColors.accent, label: "Rename") {
-                            onRename(repo)
-                            dismiss()
-                        }
-                        
-                        menuButton(icon: "trash.circle.fill", color: Color(hex: "#FF6B6B"), label: "Delete") {
-                            onDelete(repo)
-                            dismiss()
-                        }
-                    } else {
-                        menuButton(icon: "plus.circle.fill", color: AppColors.accent, label: "Create New Repository") {
-                            // TODO: Create new repo
-                        }
-                        
-                        menuButton(icon: "link.circle.fill", color: Color(hex: "#6BCB77"), label: "Clone from URL") {
-                            // TODO: Clone from URL
+                if isImporting {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: AppColors.accent))
+                            .scaleEffect(1.5)
+                        Text(importProgress)
+                            .font(.system(size: 14))
+                            .foregroundColor(AppColors.textSecondary)
+                    }
+                    .padding(40)
+                } else {
+                    VStack(spacing: 12) {
+                        if let repo = repo {
+                            menuButton(icon: "arrow.down.circle.fill", color: Color(hex: "#6BCB77"), label: "Import to Files") {
+                                importRepoFiles(repo: repo)
+                            }
+                            
+                            menuButton(icon: "pencil.circle.fill", color: AppColors.accent, label: "Open in Browser") {
+                                if let url = URL(string: repo.htmlUrl) {
+                                    UIApplication.shared.open(url)
+                                }
+                                dismiss()
+                            }
+                            
+                            menuButton(icon: "trash.circle.fill", color: Color(hex: "#FF6B6B"), label: "Delete") {
+                                onDelete(repo)
+                                dismiss()
+                            }
+                        } else {
+                            menuButton(icon: "plus.circle.fill", color: AppColors.accent, label: "Create New Repository") {
+                                // TODO: Create new repo
+                            }
+                            
+                            menuButton(icon: "link.circle.fill", color: Color(hex: "#6BCB77"), label: "Clone from URL") {
+                                // TODO: Clone from URL
+                            }
                         }
                     }
+                    .padding()
                 }
-                .padding()
             }
         }
         .preferredColorScheme(.dark)
+    }
+    
+    private func importRepoFiles(repo: GitHubRepo) {
+        guard let user = gitHubService.currentUser else { return }
+        isImporting = true
+        importProgress = "Fetching files from GitHub..."
+        
+        Task {
+            do {
+                let files = try await gitHubService.fetchRepoTree(owner: user.login, repo: repo.name, branch: repo.defaultBranch)
+                
+                await MainActor.run {
+                    importProgress = "Saving \(files.count) files..."
+                }
+                
+                let repoFolder = LocalFileManager.appDocumentsURL.appendingPathComponent(repo.name, isDirectory: true)
+                try? FileManager.default.createDirectory(at: repoFolder, withIntermediateDirectories: true)
+                
+                for file in files {
+                    let filePath = repoFolder.appendingPathComponent(file.path)
+                    try? FileManager.default.createDirectory(at: filePath.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try? file.content.write(to: filePath, atomically: true, encoding: .utf8)
+                }
+                
+                await MainActor.run {
+                    isImporting = false
+                    importProgress = ""
+                    fileManager.loadFiles(at: LocalFileManager.appDocumentsURL)
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    isImporting = false
+                    importProgress = "Error: \(error.localizedDescription)"
+                }
+            }
+        }
     }
     
     func menuButton(icon: String, color: Color, label: String, action: @escaping () -> Void) -> some View {
