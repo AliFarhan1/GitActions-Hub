@@ -8,7 +8,7 @@ struct ReposView: View {
     @State private var showDeleteAlert = false
     @State private var showNewRepoSheet = false
     @State private var showFileEditor = false
-    @State private var importRepo: GitHubRepo?
+    @State private var showContextMenu = false
     @State private var isImporting = false
     @State private var importStatus = ""
     @State private var newRepoName = ""
@@ -30,6 +30,10 @@ struct ReposView: View {
                 searchBar
                 importStatusBar
                 if mode == .repos { reposList } else { filesList }
+            }
+            // Context Menu Sheet from bottom
+            if showContextMenu, let repo = selectedRepo {
+                contextMenuOverlay(repo)
             }
         }
         .sheet(isPresented: $showNewRepoSheet) { newRepoSheet }
@@ -96,7 +100,7 @@ struct ReposView: View {
     
     var filesList: some View {
         VStack(spacing: 0) {
-            HStack { Button { mode = .repos } label: { Image(systemName: "chevron.left.circle.fill").font(.system(size: 22)).foregroundColor(AppColors.textSecondary) }; VStack(alignment: .leading, spacing: 2) { Text("Files").font(.system(size: 28, weight: .black)).foregroundColor(AppColors.text); Text(fileManager.currentPathDisplay).font(.system(size: 11, design: .monospaced)).foregroundColor(AppColors.textSecondary) }; Spacer() }.padding(.horizontal).padding(.top, 8).padding(.bottom, 4)
+            HStack { Button { mode = .repos } label: { Image(systemName: "chevron.left.circle.fill").font(.system(size: 22)).foregroundColor(AppColors.textSecondary) }; VStack(alignment: .leading, spacing: 2) { Text("Files").font(.system(size: 28, weight: .black")).foregroundColor(AppColors.text); Text(fileManager.currentPathDisplay).font(.system(size: 11, design: .monospaced)).foregroundColor(AppColors.textSecondary) }; Spacer() }.padding(.horizontal).padding(.top, 8).padding(.bottom, 4)
             if fileManager.isLoading { LoadingCard() } else if fileManager.rootFiles.isEmpty { EmptyStateView(icon: "folder.badge.plus", title: "Empty", subtitle: "Select repo > Import").frame(maxWidth: .infinity, maxHeight: .infinity) } else {
                 ScrollView { LazyVStack(spacing: 2) { ForEach(Array(fileManager.rootFiles.enumerated()), id: \.element.id) { i, file in fileRow(file) } }.padding(8) }
             }
@@ -109,7 +113,6 @@ struct ReposView: View {
                 Image(systemName: repo.isPrivate ? "lock.fill" : "globe").font(.system(size: 13)).foregroundColor(repo.isPrivate ? Color(hex: "#FFD93D") : AppColors.textSecondary)
                 Text(repo.name).font(.system(size: 16, weight: .bold)).foregroundColor(AppColors.text)
                 Spacer()
-                Button { selectedRepo = repo; showDeleteAlert = true } label: { Image(systemName: "ellipsis.circle.fill").font(.system(size: 18)).foregroundColor(AppColors.textSecondary) }
             }
             if let d = repo.description { Text(d).font(.system(size: 12)).foregroundColor(AppColors.textSecondary).lineLimit(2) }
             HStack(spacing: 16) {
@@ -123,9 +126,12 @@ struct ReposView: View {
                 Button { if let u = URL(string: repo.htmlUrl) { UIApplication.shared.open(u) } } label: { HStack(spacing: 4) { Image(systemName: "safari.fill").font(.system(size: 12)); Text("Browser") }.font(.system(size: 11, weight: .medium)).foregroundColor(AppColors.accent) }.buttonStyle(.plain)
                 Button { UIPasteboard.general.string = repo.cloneUrl } label: { HStack(spacing: 4) { Image(systemName: "doc.on.doc.fill").font(.system(size: 12)); Text("Clone") }.font(.system(size: 11, weight: .medium)).foregroundColor(Color(hex: "#C77DFF")) }.buttonStyle(.plain)
             }
+            HStack {
+                Spacer()
+                Button { selectedRepo = repo; showContextMenu = true } label: { Image(systemName: "ellipsis.circle.fill").font(.system(size: 16)).foregroundColor(AppColors.textSecondary) }
+            }
         }
         .padding(16).background(AppColors.surface).clipShape(RoundedRectangle(cornerRadius: 12))
-        .liquidGlass(cornerRadius: 12)
     }
     
     func fileRow(_ file: GitFile) -> some View {
@@ -180,6 +186,48 @@ struct ReposView: View {
         }
     }
     
+    // Context Menu Overlay (Sheet from bottom)
+    func contextMenuOverlay(_ repo: GitHubRepo) -> some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.5).ignoresSafeArea().onTapGesture { showContextMenu = false }
+            VStack(spacing: 0) {
+                HStack {
+                    Text(repo.name).font(.system(size: 16, weight: .bold)).foregroundColor(AppColors.text)
+                    Spacer()
+                    Button { showContextMenu = false } label: { Image(systemName: "xmark.circle.fill").foregroundColor(AppColors.textSecondary) }
+                }
+                .padding()
+                .background(AppColors.surface)
+                .cornerRadius(20, corners: [.topLeft, .topRight])
+                
+                VStack(spacing: 8) {
+                    menuBtn(icon: "arrow.down.circle.fill", color: Color(hex: "#6BCB77"), label: "Import to Files") { importRepoFiles(repo); showContextMenu = false }
+                    menuBtn(icon: "safari.fill", color: AppColors.accent, label: "Open in Browser") { if let u = URL(string: repo.htmlUrl) { UIApplication.shared.open(u) }; showContextMenu = false }
+                    menuBtn(icon: "doc.on.doc.fill", color: Color(hex: "#C77DFF"), label: "Copy Clone URL") { UIPasteboard.general.string = repo.cloneUrl; showContextMenu = false }
+                    menuBtn(icon: "trash.fill", color: Color(hex: "#FF6B6B"), label: "Delete Repository") { showContextMenu = false; selectedRepo = repo; showDeleteAlert = true }
+                }
+                .padding()
+                .background(AppColors.surface)
+                .cornerRadius(20, corners: [.bottomLeft, .bottomRight])
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
+        }
+    }
+    
+    func menuBtn(icon: String, color: Color, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                Image(systemName: icon).font(.system(size: 20)).foregroundColor(color)
+                Text(label).font(.system(size: 15, weight: .medium)).foregroundColor(AppColors.text)
+                Spacer()
+            }
+            .padding(.vertical, 14).padding(.horizontal, 16)
+            .background(color.opacity(0.1))
+            .cornerRadius(12)
+        }
+    }
+    
     var newRepoSheet: some View {
         ZStack { AppColors.background.ignoresSafeArea()
             VStack(spacing: 0) {
@@ -205,9 +253,7 @@ struct ReposView: View {
                 }
                 .padding(30)
                 .background(AppColors.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 20))
-                .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(AppColors.border, lineWidth: 1))
-                .liquidGlass(cornerRadius: 20, intensity: 0.8)
+                .cornerRadius(20)
                 
                 HStack(spacing: 16) {
                     Button("Cancel") { selectedRepo = nil }.font(.system(size: 15, weight: .semibold)).foregroundColor(AppColors.text).frame(maxWidth: .infinity).frame(height: 44).background(AppColors.surfaceElevated).clipShape(RoundedRectangle(cornerRadius: 10))
@@ -245,5 +291,21 @@ struct ReposView: View {
         FileEditorView(file: file, content: fileManager.fileContent) { newContent in
             fileManager.writeFile(file, content: newContent)
         }
+    }
+}
+
+extension View {
+    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
+        clipShape(RoundedCorner(radius: radius, corners: corners))
+    }
+}
+
+struct RoundedCorner: Shape {
+    var radius: CGFloat = .infinity
+    var corners: UIRectCorner = .allCorners
+    
+    func path(in rect: CGRect) -> Path {
+        let path = UIBezierPath(roundedRect: rect, byRoundingCorners: corners, cornerRadii: CGSize(width: radius, height: radius))
+        return Path(path.cgPath)
     }
 }
