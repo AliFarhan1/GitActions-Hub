@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key>
-    <string>ar</string>
+    <string>en</string>
     <key>CFBundleDisplayName</key>
     <string>GitActions Hub</string>
     <key>CFBundleExecutable</key>
@@ -67,7 +67,7 @@
     <key>UIUserInterfaceStyle</key>
     <string>Dark</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>للوصول إلى الصور لرفعها</string>
+    <string>Access photos to upload them</string>
     <key>UIFileSharingEnabled</key>
     <true/>
     <key>LSSupportsOpeningDocumentsInPlace</key>
