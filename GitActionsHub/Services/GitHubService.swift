@@ -39,7 +39,7 @@ class GitHubService: ObservableObject {
         currentUser = nil; repositories = []; workflowRuns = []; isAuthenticated = false
     }
     
-    private func makeRequest<T: Decodable>(endpoint: String, method: String = "GET", body: Data? = nil) async throws -> T {
+    func makeRequest<T: Decodable>(endpoint: String, method: String = "GET", body: Data? = nil) async throws -> T {
         guard let token = accessToken else { throw GitHubError.notAuthenticated }
         guard let url = URL(string: "\(baseURL)\(endpoint)") else { throw GitHubError.invalidURL }
         var request = URLRequest(url: url)

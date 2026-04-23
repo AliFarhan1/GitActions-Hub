@@ -5,22 +5,20 @@ struct ReposView: View {
     @StateObject private var fileManager = LocalFileManager()
     @State private var searchText = ""
     @State private var selectedRepo: GitHubRepo?
-    @State private var showRepoDetail = false
-    @State private var repoToDelete: GitHubRepo?
     @State private var showDeleteAlert = false
-    @State private var selectedRepoForMenu: GitHubRepo?
-    @State private var showContextMenu = false
+    @State private var showNewRepoSheet = false
     @State private var showFileEditor = false
     @State private var mode: ViewMode = .repos
+    @State private var newRepoName = ""
+    @State private var newRepoDesc = ""
+    @State private var isCreating = false
     
     enum ViewMode { case repos, files }
-    enum SortOpt: String, CaseIterable { case up = "Updated", nm = "Name", st = "Stars" }
     
     var filteredRepos: [GitHubRepo] {
         var repos = gitHubService.repositories
         if !searchText.isEmpty { repos = repos.filter { $0.name.localizedCaseInsensitiveContains(searchText) || ($0.description?.localizedCaseInsensitiveContains(searchText) ?? false) } }
-        repos = repos.sorted { $0.updatedAt > $1.updatedAt }
-        return repos
+        return repos.sorted { $0.updatedAt > $1.updatedAt }
     }
     
     var body: some View {
@@ -31,13 +29,9 @@ struct ReposView: View {
                 if mode == .repos { reposList } else { filesList }
             }
         }
-        .sheet(isPresented: $showRepoDetail) { if let r = selectedRepo { repoDetailSheet(r) } }
-        .sheet(isPresented: $showContextMenu) { contextMenuSheet }
+        .sheet(isPresented: $showNewRepoSheet) { newRepoSheet }
+        .sheet(isPresented: $showDeleteAlert) { deleteAlert }
         .sheet(isPresented: $showFileEditor) { if let f = fileManager.selectedFile { fileEditorSheet(f) } }
-        .alert("Delete", isPresented: $showDeleteAlert) {
-            Button("Delete", role: .destructive) { if let r = repoToDelete { Task { await gitHubService.deleteRepository(repo: r) } } }
-            Button("Cancel", role: .cancel) {}
-        } message: { Text("Delete \"\(repoToDelete?.name ?? "")\"?") }
         .onAppear { if gitHubService.repositories.isEmpty { Task { await gitHubService.fetchRepositories() } } }
     }
     
@@ -49,7 +43,7 @@ struct ReposView: View {
             }
             Spacer()
             Button { Task { await gitHubService.fetchRepositories() } } label: { Image(systemName: "arrow.clockwise.circle.fill").font(.system(size: 22)).foregroundColor(AppColors.textSecondary) }
-            Button { selectedRepoForMenu = nil; showContextMenu = true } label: { Image(systemName: "plus.circle.fill").font(.system(size: 22)).foregroundColor(AppColors.accent) }
+            Button { selectedRepo = nil; showNewRepoSheet = true } label: { Image(systemName: "plus.circle.fill").font(.system(size: 22)).foregroundColor(AppColors.accent) }
         }
         .padding(.horizontal).padding(.top, 8).padding(.bottom, 12)
     }
@@ -68,8 +62,7 @@ struct ReposView: View {
             if gitHubService.isLoading { LoadingCard(); Spacer() } else {
                 ScrollView {
                     LazyVStack(spacing: 10) {
-                        ForEach(filteredRepos) { repo in Button { selectedRepo = repo; showRepoDetail = true } label: { repoCardRow(repo) }
-                        .padding(.horizontal).simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in selectedRepoForMenu = repo; showContextMenu = true }) }
+                        ForEach(filteredRepos) { repo in Button { selectedRepo = repo } label: { repoCardRow(repo) }.padding(.horizontal) }
                     }.padding(.vertical)
                 }
             }
@@ -79,18 +72,34 @@ struct ReposView: View {
     var filesList: some View {
         VStack(spacing: 0) {
             HStack { Button { mode = .repos } label: { Image(systemName: "chevron.left.circle.fill").font(.system(size: 22)).foregroundColor(AppColors.textSecondary) }; VStack(alignment: .leading, spacing: 2) { Text("Files").font(.system(size: 28, weight: .black)).foregroundColor(AppColors.text); Text(fileManager.currentPathDisplay).font(.system(size: 11, design: .monospaced)).foregroundColor(AppColors.textSecondary) }; Spacer() }.padding(.horizontal).padding(.top, 8).padding(.bottom, 4)
-            if fileManager.isLoading { LoadingCard() } else if fileManager.rootFiles.isEmpty { EmptyStateView(icon: "folder.badge.plus", title: "Empty", subtitle: "Long press repo > Import").frame(maxWidth: .infinity, maxHeight: .infinity) } else {
+            if fileManager.isLoading { LoadingCard() } else if fileManager.rootFiles.isEmpty { EmptyStateView(icon: "folder.badge.plus", title: "Empty", subtitle: "Select repo > Import").frame(maxWidth: .infinity, maxHeight: .infinity) } else {
                 ScrollView { LazyVStack(spacing: 2) { ForEach(Array(fileManager.rootFiles.enumerated()), id: \.element.id) { i, file in fileRow(file) } }.padding(8) }
             }
         }
     }
     
     func repoCardRow(_ repo: GitHubRepo) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: repo.isPrivate ? "lock.fill" : "globe").font(.system(size: 13)).foregroundColor(repo.isPrivate ? Color(hex: "#FFD93D") : AppColors.textSecondary)
-            Text(repo.name).font(.system(size: 16, weight: .bold)).foregroundColor(AppColors.text)
-            if let d = repo.description { Text(d).font(.system(size: 12)).foregroundColor(AppColors.textSecondary).lineLimit(1) }
-            Spacer()
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: repo.isPrivate ? "lock.fill" : "globe").font(.system(size: 13)).foregroundColor(repo.isPrivate ? Color(hex: "#FFD93D") : AppColors.textSecondary)
+                Text(repo.name).font(.system(size: 16, weight: .bold)).foregroundColor(AppColors.text)
+                Spacer()
+                Image(systemName: "chevron.right").font(.system(size: 12)).foregroundColor(AppColors.textSecondary)
+            }
+            if let d = repo.description { Text(d).font(.system(size: 12)).foregroundColor(AppColors.textSecondary).lineLimit(2) }
+            HStack(spacing: 16) {
+                if let l = repo.language { Label(l, systemImage: "chevron.left.forwardslash.chevron.right").font(.system(size: 11)).foregroundColor(AppColors.accent) }
+                Label("\(repo.stargazersCount)", systemImage: "star.fill").font(.system(size: 11)).foregroundColor(Color(hex: "#FFD93D"))
+                if repo.isPrivate { Text("Private").font(.system(size: 10)).foregroundColor(Color(hex: "#FFD93D")).padding(.horizontal, 6).padding(.vertical, 2).background(Color(hex: "#FFD93D").opacity(0.15)).clipShape(Capsule()) }
+                Spacer()
+            }
+            HStack(spacing: 8) {
+                Button { importRepoToFiles(repo) } label: { HStack(spacing: 4) { Image(systemName: "arrow.down.circle.fill").font(.system(size: 12)); Text("Import") }.font(.system(size: 11, weight: .medium)).foregroundColor(Color(hex: "#6BCB77")) }.buttonStyle(.plain)
+                Button { if let u = URL(string: repo.htmlUrl) { UIApplication.shared.open(u) } } label: { HStack(spacing: 4) { Image(systemName: "safari.fill").font(.system(size: 12)); Text("Browser") }.font(.system(size: 11, weight: .medium)).foregroundColor(AppColors.accent) }.buttonStyle(.plain)
+                Button { } label: { HStack(spacing: 4) { Image(systemName: "doc.on.doc.fill").font(.system(size: 12)); Text("Clone") }.font(.system(size: 11, weight: .medium)).foregroundColor(Color(hex: "#C77DFF")) }.buttonStyle(.plain)
+                Spacer()
+                Button { selectedRepo = repo } label: { Image(systemName: "ellipsis.circle.fill").font(.system(size: 16)).foregroundColor(AppColors.textSecondary) }.buttonStyle(.plain)
+            }
         }
         .padding(16).background(AppColors.surface).clipShape(RoundedRectangle(cornerRadius: 12))
     }
@@ -109,9 +118,7 @@ struct ReposView: View {
     
     func fmtSize(_ b: Int64) -> String { b < 1024 ? "\(b)B" : b < 1_048_576 ? "\(b/1024)KB" : "\(b/1_048_576)MB" }
     
-    func handleFileTap(_ file: GitFile) {
-        if file.isDirectory { fileManager.loadFiles(at: URL(fileURLWithPath: file.path)) } else { fileManager.readFile(file); showFileEditor = true }
-    }
+    func handleFileTap(_ file: GitFile) { if file.isDirectory { fileManager.loadFiles(at: URL(fileURLWithPath: file.path)) } else { fileManager.readFile(file); showFileEditor = true } }
     
     func importRepoToFiles(_ repo: GitHubRepo) {
         guard let user = gitHubService.currentUser else { return }
@@ -130,44 +137,55 @@ struct ReposView: View {
         }
     }
     
-    var contextMenuSheet: some View {
+    var newRepoSheet: some View {
         ZStack { AppColors.background.ignoresSafeArea()
             VStack(spacing: 0) {
-                HStack { Button { } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 22)).foregroundColor(AppColors.textSecondary) }; Spacer(); Text(selectedRepoForMenu?.name ?? "Options").font(.system(size: 16, weight: .bold)).foregroundColor(AppColors.text); Spacer() }.padding()
+                HStack { Text("New Repository").font(.system(size: 18, weight: .bold)).foregroundColor(AppColors.text); Spacer() }.padding()
                 Divider().background(AppColors.border)
-                VStack(spacing: 12) {
-                    if let r = selectedRepoForMenu {
-                        menuBtn("arrow.down.circle.fill", Color(hex: "#6BCB77"), "Import to Files") { importRepoToFiles(r); }
-                        menuBtn("folder.fill", Color(hex: "#FFD93D"), "Open Files") { mode = .files; }
-                        menuBtn("safari.fill", AppColors.accent, "Open in Browser") { if let u = URL(string: r.htmlUrl) { UIApplication.shared.open(u) } }
-                        menuBtn("trash.circle.fill", Color(hex: "#FF6B6B"), "Delete") { repoToDelete = r; showDeleteAlert = true; }
-                    }
+                VStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 8) { Label("Name", systemImage: "textformat").font(.system(size: 13, weight: .semibold)).foregroundColor(AppColors.textSecondary); TextField("repo-name", text: $newRepoName).font(.system(size: 15)).foregroundColor(AppColors.text).autocorrectionDisabled().textInputAutocapitalization(.never) }.padding(12).background(AppColors.surfaceElevated).clipShape(RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(AppColors.border, lineWidth: 1))
+                    VStack(alignment: .leading, spacing: 8) { Label("Description", systemImage: "text.alignleft").font(.system(size: 13, weight: .semibold)).foregroundColor(AppColors.textSecondary); TextField("optional", text: $newRepoDesc).font(.system(size: 15)).foregroundColor(AppColors.text) }.padding(12).background(AppColors.surfaceElevated).clipShape(RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(AppColors.border, lineWidth: 1))
+                    Button { createNewRepo() } label: { HStack { if isCreating { ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white)).scaleEffect(0.8) } else { Image(systemName: "plus.circle.fill") }; Text(isCreating ? "Creating..." : "Create Repository") }.font(.system(size: 15, weight: .semibold)).foregroundColor(.white).frame(maxWidth: .infinity).frame(height: 50).background(AppColors.accent).clipShape(RoundedRectangle(cornerRadius: 12)) }.disabled(newRepoName.isEmpty || isCreating)
                 }.padding()
             }
         }.preferredColorScheme(.dark)
     }
     
-    func menuBtn(_ icon: String, _ color: Color, _ label: String, _ a: @escaping () -> Void) -> some View {
-        Button(action: a) {
-            HStack(spacing: 12) { Image(systemName: icon).font(.system(size: 20)).foregroundColor(color); Text(label).font(.system(size: 15, weight: .medium)).foregroundColor(AppColors.text); Spacer() }
-            .padding(16).background(color.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(color.opacity(0.3), lineWidth: 1))
+    var deleteAlert: some View {
+        ZStack { AppColors.background.ignoresSafeArea()
+            VStack(spacing: 20) {
+                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 40)).foregroundColor(Color(hex: "#FF6B6B"))
+                Text("Delete Repository?").font(.system(size: 18, weight: .bold)).foregroundColor(AppColors.text)
+                Text("This action cannot be undone.").font(.system(size: 14)).foregroundColor(AppColors.textSecondary)
+                HStack(spacing: 16) {
+                    Button("Cancel", role: .cancel) { selectedRepo = nil }.font(.system(size: 15, weight: .semibold)).foregroundColor(AppColors.textSecondary).frame(maxWidth: .infinity).frame(height: 44).background(AppColors.surfaceElevated).clipShape(RoundedRectangle(cornerRadius: 10))
+                    Button("Delete", role: .destructive) { deleteRepo() }.font(.system(size: 15, weight: .semibold)).foregroundColor(.white).frame(maxWidth: .infinity).frame(height: 44).background(Color(hex: "#FF6B6B")).clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+            }.padding(30)
+        }.preferredColorScheme(.dark)
+    }
+    
+    func createNewRepo() {
+        guard !newRepoName.isEmpty, let user = gitHubService.currentUser else { return }
+        isCreating = true
+        Task {
+            do {
+                let body: [String: String] = ["name": newRepoName, "description": newRepoDesc, "private": "false"]
+                let data = try JSONEncoder().encode(body)
+                let _: EmptyResponse = try await gitHubService.makeRequest(endpoint: "/user/repos", method: "POST", body: data)
+                await MainActor.run { newRepoName = ""; newRepoDesc = ""; isCreating = false; showNewRepoSheet = false; Task { await gitHubService.fetchRepositories() } }
+            } catch {
+                await MainActor.run { isCreating = false; gitHubService.error = error.localizedDescription }
+            }
         }
     }
     
-    func repoDetailSheet(_ repo: GitHubRepo) -> some View {
-        ZStack { AppColors.background.ignoresSafeArea()
-            VStack(spacing: 16) {
-                HStack { Text(repo.name).font(.system(size: 18, weight: .bold)).foregroundColor(AppColors.text); Spacer(); Link(destination: URL(string: repo.htmlUrl)!) { Image(systemName: "safari.fill").font(.system(size: 20)).foregroundColor(AppColors.accent) } }
-                .padding()
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Clone URL", systemImage: "link").font(.system(size: 13, weight: .semibold)).foregroundColor(AppColors.textSecondary)
-                        HStack { Text(repo.cloneUrl).font(.system(size: 12, design: .monospaced)).foregroundColor(AppColors.text).lineLimit(1); Spacer(); Button { UIPasteboard.general.string = repo.cloneUrl } label: { Image(systemName: "doc.on.doc.fill").font(.system(size: 16)).foregroundColor(AppColors.accent) } }
-                        .padding(12).background(AppColors.surfaceElevated).clipShape(RoundedRectangle(cornerRadius: 10))
-                    }.padding()
-                }
-            }
-        }.preferredColorScheme(.dark)
+    func deleteRepo() {
+        guard let repo = selectedRepo else { return }
+        Task {
+            await gitHubService.deleteRepository(repo: repo)
+            await MainActor.run { selectedRepo = nil }
+        }
     }
     
     func fileEditorSheet(_ file: GitFile) -> some View {
