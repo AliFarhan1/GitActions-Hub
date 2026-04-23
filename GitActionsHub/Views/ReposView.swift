@@ -8,6 +8,11 @@ struct ReposView: View {
     @State private var sortOption: SortOption = .updated
     @State private var repoToDelete: GitHubRepo?
     @State private var showDeleteAlert = false
+    @State private var repoToRename: GitHubRepo?
+    @State private var showRenameDialog = false
+    @State private var newRepoName = ""
+    @State private var selectedRepoForMenu: GitHubRepo?
+    @State private var showContextMenu = false
 
     enum SortOption: String, CaseIterable {
         case updated = "Updated"
@@ -52,6 +57,10 @@ struct ReposView: View {
                             Image(systemName: "arrow.clockwise.circle.fill")
                                 .font(.system(size: 22)).foregroundColor(AppColors.textSecondary)
                         }
+                        Button { selectedRepoForMenu = nil; showContextMenu = true } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 22)).foregroundColor(AppColors.accent)
+                        }
                     }
                     .padding(.horizontal).padding(.top, 8).padding(.bottom, 12)
 
@@ -89,9 +98,13 @@ struct ReposView: View {
                                         selectedRepo = repo; showRepoDetail = true
                                     }
                                     .padding(.horizontal)
-                                    .onLongPressGesture {
-                                        repoToDelete = repo; showDeleteAlert = true
-                                    }
+                                    .simultaneousGesture(
+                                        LongPressGesture(minimumDuration: 0.5)
+                                            .onEnded { _ in
+                                                selectedRepoForMenu = repo
+                                                showContextMenu = true
+                                            }
+                                    )
                                 }
                             }
                             .padding(.vertical)
@@ -105,6 +118,18 @@ struct ReposView: View {
         .sheet(isPresented: $showRepoDetail) {
             if let repo = selectedRepo { RepoDetailView(repo: repo) }
         }
+        .sheet(isPresented: $showContextMenu) {
+            ContextMenuSheet(repo: selectedRepoForMenu, onDelete: { repo in
+                repoToDelete = repo
+                showDeleteAlert = true
+            }, onRename: { repo in
+                repoToRename = repo
+                newRepoName = repo.name
+                showRenameDialog = true
+            }, onDismiss: {
+                selectedRepoForMenu = nil
+            })
+        }
         .alert("Delete Repository", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) {
                 if let repo = repoToDelete { Task { await gitHubService.deleteRepository(repo: repo) } }
@@ -112,6 +137,13 @@ struct ReposView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Delete \"\(repoToDelete?.name ?? "")\"? This cannot be undone.")
+        }
+        .alert("Rename Repository", isPresented: $showRenameDialog) {
+            TextField("New name", text: $newRepoName)
+            Button("Save", role: .destructive) { }
+            Button("Cancel", role: .cancel) { newRepoName = "" }
+        } message: {
+            Text("Rename to: \(newRepoName)")
         }
         .onAppear {
             if gitHubService.repositories.isEmpty { Task { await gitHubService.fetchRepositories() } }
@@ -372,6 +404,90 @@ struct ProfileView: View {
             Text(key).font(.system(size: 13)).foregroundColor(AppColors.textSecondary)
             Spacer()
             Text(value).font(.system(size: 13, weight: .medium)).foregroundColor(AppColors.text)
+        }
+    }
+}
+
+struct ContextMenuSheet: View {
+    let repo: GitHubRepo?
+    let onDelete: (GitHubRepo) -> Void
+    let onRename: (GitHubRepo) -> Void
+    let onDismiss: () -> Void
+    @Environment(\.dismiss) var dismiss
+    
+    var body: some View {
+        ZStack {
+            AppColors.background.ignoresSafeArea()
+            
+            VStack(spacing: 0) {
+                HStack {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 22))
+                            .foregroundColor(AppColors.textSecondary)
+                    }
+                    Spacer()
+                    Text(repo?.name ?? "Options")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(AppColors.text)
+                    Spacer()
+                    Spacer().frame(width: 22)
+                }
+                .padding()
+                Divider().background(AppColors.border)
+                
+                VStack(spacing: 12) {
+                    if let repo = repo {
+                        menuButton(icon: "arrow.down.circle.fill", color: Color(hex: "#6BCB77"), label: "Import to Files") {
+                            // TODO: Import repo files
+                        }
+                        
+                        menuButton(icon: "pencil.circle.fill", color: AppColors.accent, label: "Rename") {
+                            onRename(repo)
+                            dismiss()
+                        }
+                        
+                        menuButton(icon: "trash.circle.fill", color: Color(hex: "#FF6B6B"), label: "Delete") {
+                            onDelete(repo)
+                            dismiss()
+                        }
+                    } else {
+                        menuButton(icon: "plus.circle.fill", color: AppColors.accent, label: "Create New Repository") {
+                            // TODO: Create new repo
+                        }
+                        
+                        menuButton(icon: "link.circle.fill", color: Color(hex: "#6BCB77"), label: "Clone from URL") {
+                            // TODO: Clone from URL
+                        }
+                    }
+                }
+                .padding()
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+    
+    func menuButton(icon: String, color: Color, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 20))
+                    .foregroundColor(color)
+                Text(label)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(AppColors.text)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14))
+                    .foregroundColor(AppColors.textSecondary)
+            }
+            .padding(16)
+            .background(color.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(color.opacity(0.3), lineWidth: 1)
+            )
         }
     }
 }

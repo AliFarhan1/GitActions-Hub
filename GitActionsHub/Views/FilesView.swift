@@ -6,7 +6,6 @@ struct FilesView: View {
     @EnvironmentObject var gitHubService: GitHubService
     @State private var showFileEditor = false
     @State private var showCreateDialog = false
-    @State private var showCommitSheet = false
     @State private var showImportPicker = false
     @State private var showDeleteAlert = false
     @State private var showRenameDialog = false
@@ -46,7 +45,6 @@ struct FilesView: View {
         .sheet(isPresented: $showFileEditor) {
             if let f = fileManager.selectedFile { FileEditorView(file: f, content: fileManager.fileContent) { fileManager.writeFile(f, content: $0) } }
         }
-        .sheet(isPresented: $showCommitSheet) { CommitPushSheet(gitHubService: gitHubService, fileManager: fileManager) }
         .fileImporter(isPresented: $showImportPicker, allowedContentTypes: [.item, .folder], allowsMultipleSelection: true) { if case .success(let urls) = $0 { urls.forEach { fileManager.importFromFiles(url: $0) } } }
         .alert("Create \(isCreatingFolder ? "Folder" : "File")", isPresented: $showCreateDialog) { TextField("Name", text: $newFileName).autocorrectionDisabled().textInputAutocapitalization(.never); Button("Create") { if !newFileName.isEmpty { fileManager.createFile(name: newFileName, at: fileManager.currentPath.path, isDirectory: isCreatingFolder); newFileName = "" } }; Button("Cancel", role: .cancel) { newFileName = "" } }
         .alert("Rename", isPresented: $showRenameDialog) { TextField("New name", text: $newFileName).autocorrectionDisabled().textInputAutocapitalization(.never); Button("Save") { if let f = fileToRename, !newFileName.isEmpty { fileManager.renameFile(f, newName: newFileName); newFileName = "" } }; Button("Cancel", role: .cancel) { newFileName = "" } }
@@ -55,10 +53,9 @@ struct FilesView: View {
 
     private var header: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) { Text("Files").font(.system(size: 28, weight: .black)).foregroundColor(AppColors.text); Text("Project file manager").font(.system(size: 13)).foregroundColor(AppColors.textSecondary) }
+            VStack(alignment: .leading, spacing: 2) { Text("Files").font(.system(size: 28, weight: .black)).foregroundColor(AppColors.text); Text("Local file manager").font(.system(size: 13)).foregroundColor(AppColors.textSecondary) }
             Spacer()
-            Button { withAnimation { isEditMode.toggle() } } label: { Text(isEditMode ? "Done" : "Reorder").font(.system(size: 13, weight: .semibold)).foregroundColor(isEditMode ? Color(hex: "#6BCB77") : AppColors.textSecondary).padding(.horizontal, 12).padding(.vertical, 6).background(isEditMode ? Color(hex: "#6BCB77").opacity(0.15) : AppColors.surfaceElevated).clipShape(Capsule()) }
-            Button { showCommitSheet = true } label: { HStack(spacing: 6) { Image(systemName: "arrow.up.circle.fill"); Text("Push").font(.system(size: 12, weight: .semibold)) }.foregroundColor(.white).padding(.horizontal, 12).padding(.vertical, 8).background(LinearGradient(colors: [Color(hex: "#6BCB77"), Color(hex: "#4CAF50")], startPoint: .leading, endPoint: .trailing)).clipShape(Capsule()).shadow(color: Color(hex: "#6BCB77").opacity(0.4), radius: 8) }
+            Button { withAnimation { isEditMode.toggle() } } label: { Text(isEditMode ? "Done" : "Edit").font(.system(size: 13, weight: .semibold)).foregroundColor(isEditMode ? Color(hex: "#6BCB77") : AppColors.textSecondary).padding(.horizontal, 12).padding(.vertical, 6).background(isEditMode ? Color(hex: "#6BCB77").opacity(0.15) : AppColors.surfaceElevated).clipShape(Capsule()) }
         }
         .padding(.horizontal).padding(.top, 8).padding(.bottom, 4)
     }
@@ -167,6 +164,8 @@ struct FileRowView: View {
 struct CodeEditor: UIViewRepresentable {
     @Binding var text: String
     var fileExtension: String
+    var searchTerm: String = ""
+    var errorLines: [Int] = []
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -476,6 +475,9 @@ struct FileEditorView: View {
 
     @State private var text: String
     @State private var hasChanges = false
+    @State private var showSearch = false
+    @State private var searchText = ""
+    @State private var errorLines: [Int] = []
     @Environment(\.dismiss) var dismiss
 
     init(file: GitFile, content: String, onSave: @escaping (String) -> Void) {
@@ -484,12 +486,30 @@ struct FileEditorView: View {
         self.onSave = onSave
         _text = State(initialValue: content)
     }
+    
+    private func detectErrors(in code: String) -> [Int] {
+        var lines: [Int] = []
+        let codeLines = code.components(separatedBy: "\n")
+        let keywords = ["error:", "fatal error:", "cannot find", "no such module", "type '", "value of type", "missing argument", "invalid argument", "expected", "undeclared"]
+        
+        for (index, line) in codeLines.enumerated() {
+            let lower = line.lowercased()
+            for kw in keywords {
+                if lower.contains(kw) {
+                    lines.append(index + 1)
+                    break
+                }
+            }
+        }
+        return lines
+    }
 
     var body: some View {
         NavigationStack {
             ZStack {
                 Color(hex: "#080810").ignoresSafeArea()
                 VStack(spacing: 0) {
+                    // Header
                     HStack(spacing: 8) {
                         Image(systemName: file.icon).foregroundColor(file.iconColor)
                         Text(file.name)
@@ -497,18 +517,66 @@ struct FileEditorView: View {
                             .foregroundColor(AppColors.text).lineLimit(1)
                         if hasChanges { Circle().fill(Color(hex: "#FFD93D")).frame(width: 6, height: 6) }
                         Spacer()
+                        if !errorLines.isEmpty {
+                            HStack(spacing: 4) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 10))
+                                Text("\(errorLines.count)")
+                                    .font(.system(size: 11, weight: .bold))
+                            }
+                            .foregroundColor(Color(hex: "#FF6B6B"))
+                            .padding(.horizontal, 6).padding(.vertical, 3)
+                            .background(Color(hex: "#FF6B6B").opacity(0.15))
+                            .clipShape(Capsule())
+                        }
                         Text("\(text.components(separatedBy: "\n").count) lines")
                             .font(.system(size: 11)).foregroundColor(AppColors.textSecondary)
                     }
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(AppColors.surface)
+                    .overlay(alignment: .trailing) {
+                        HStack(spacing: 8) {
+                            Button { showSearch.toggle() } label: {
+                                Image(systemName: showSearch ? "xmark.circle.fill" : "magnifyingglass")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(showSearch ? Color(hex: "#FF6B6B") : AppColors.textSecondary)
+                            }
+                        }
+                        .padding(.trailing, 16)
+                    }
+                    
+                    if showSearch {
+                        HStack {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundColor(AppColors.textSecondary)
+                            TextField("Search...", text: $searchText)
+                                .font(.system(size: 13, design: .monospaced))
+                                .foregroundColor(AppColors.text)
+                            if !searchText.isEmpty {
+                                Button { searchText = "" } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(AppColors.textSecondary)
+                                }
+                            }
+                        }
+                        .padding(10).background(AppColors.surfaceElevated)
+                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(AppColors.accent.opacity(0.5), lineWidth: 1))
+                        .padding(8)
+                    }
+                    
                     Divider().background(AppColors.border)
 
                     CodeEditor(
                         text: $text,
-                        fileExtension: (file.name as NSString).pathExtension.lowercased()
+                        fileExtension: (file.name as NSString).pathExtension.lowercased(),
+                        searchTerm: showSearch ? searchText : "",
+                        errorLines: errorLines
                     )
-                    .onChange(of: text) { _ in hasChanges = true }
+                    .onChange(of: text) { newText in
+                        hasChanges = true
+                        errorLines = detectErrors(in: newText)
+                    }
+                    .onChange(of: searchText) { _ in }
                 }
             }
             .navigationTitle("")
