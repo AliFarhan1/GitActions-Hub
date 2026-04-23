@@ -215,18 +215,6 @@ struct CodeEditor: UIViewRepresentable {
         textView.delegate = c
         textView.text = text
         c.applyHighlighting()
-        c.rebuildGutter()
-        
-        // Force layout update
-        container.setNeedsLayout()
-        container.layoutIfNeeded()
-        
-        // Set up scroll sync after layout
-        DispatchQueue.main.async {
-            self.textView.addObserver(c, forKeyPath: "contentOffset", options: .new, context: nil)
-            // Trigger proper gutter rebuild after text is set
-            c.rebuildGutter()
-        }
         
         // Set up Auto Layout
         gutterBG.translatesAutoresizingMaskIntoConstraints = false
@@ -234,11 +222,12 @@ struct CodeEditor: UIViewRepresentable {
         separator.translatesAutoresizingMaskIntoConstraints = false
         textView.translatesAutoresizingMaskIntoConstraints = false
         
+        let gutterW = c.gutterWidth
         NSLayoutConstraint.activate([
             gutterBG.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             gutterBG.topAnchor.constraint(equalTo: container.topAnchor),
             gutterBG.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            gutterBG.widthAnchor.constraint(equalToConstant: gutterWidth),
+            gutterBG.widthAnchor.constraint(equalToConstant: gutterW),
             
             gutterContent.leadingAnchor.constraint(equalTo: gutterBG.leadingAnchor),
             gutterContent.topAnchor.constraint(equalTo: gutterBG.topAnchor),
@@ -254,7 +243,13 @@ struct CodeEditor: UIViewRepresentable {
             textView.topAnchor.constraint(equalTo: container.topAnchor),
             textView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
-
+        
+        // Set up scroll sync after layout is complete
+        DispatchQueue.main.async {
+            c.textView.addObserver(c, forKeyPath: "contentOffset", options: [.new], context: nil)
+            c.rebuildGutter()
+        }
+        
         return container
     }
 
