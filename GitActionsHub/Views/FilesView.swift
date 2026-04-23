@@ -212,9 +212,48 @@ struct CodeEditor: UIViewRepresentable {
         c.gutterContent = gutterContent
         c.separator = separator
         c.textView = textView
+        textView.delegate = c
         textView.text = text
         c.applyHighlighting()
         c.rebuildGutter()
+        
+        // Force layout update
+        container.setNeedsLayout()
+        container.layoutIfNeeded()
+        
+        // Set up scroll sync after layout
+        DispatchQueue.main.async {
+            self.textView.addObserver(c, forKeyPath: "contentOffset", options: .new, context: nil)
+            // Trigger proper gutter rebuild after text is set
+            c.rebuildGutter()
+        }
+        
+        // Set up Auto Layout
+        gutterBG.translatesAutoresizingMaskIntoConstraints = false
+        gutterContent.translatesAutoresizingMaskIntoConstraints = false
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        textView.translatesAutoresizingMaskIntoConstraints = false
+        
+        NSLayoutConstraint.activate([
+            gutterBG.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            gutterBG.topAnchor.constraint(equalTo: container.topAnchor),
+            gutterBG.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            gutterBG.widthAnchor.constraint(equalToConstant: gutterWidth),
+            
+            gutterContent.leadingAnchor.constraint(equalTo: gutterBG.leadingAnchor),
+            gutterContent.topAnchor.constraint(equalTo: gutterBG.topAnchor),
+            gutterContent.widthAnchor.constraint(equalTo: gutterBG.widthAnchor),
+            
+            separator.leadingAnchor.constraint(equalTo: gutterBG.trailingAnchor),
+            separator.topAnchor.constraint(equalTo: container.topAnchor),
+            separator.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            separator.widthAnchor.constraint(equalToConstant: 1),
+            
+            textView.leadingAnchor.constraint(equalTo: separator.trailingAnchor),
+            textView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            textView.topAnchor.constraint(equalTo: container.topAnchor),
+            textView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
 
         return container
     }
@@ -244,6 +283,16 @@ struct CodeEditor: UIViewRepresentable {
         init(_ parent: CodeEditor) {
             self.parent = parent
         }
+        
+        override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
+            if keyPath == "contentOffset", let tv = object as? UITextView {
+                gutterContent.frame.origin.y = -tv.contentOffset.y
+            }
+        }
+
+        deinit {
+            textView?.removeObserver(self, forKeyPath: "contentOffset")
+        }
 
         func layoutAll() {
             guard let c = container else { return }
@@ -258,7 +307,7 @@ struct CodeEditor: UIViewRepresentable {
             gutterLabels.forEach { $0.removeFromSuperview() }
             gutterLabels.removeAll()
 
-            guard let raw = textView.text else { return }
+            guard let raw = textView.text, !raw.isEmpty else { return }
             let lines = (raw as NSString).components(separatedBy: "\n")
             let count = max(lines.count, 1)
             let lh = font.lineHeight
@@ -269,12 +318,14 @@ struct CodeEditor: UIViewRepresentable {
                 label.font = font
                 label.textColor = UIColor(Color(hex: "#555570"))
                 label.textAlignment = .right
-                label.frame = CGRect(x: 6, y: topPad + CGFloat(i) * lh, width: gutterWidth - 12, height: lh)
+                label.frame = CGRect(x: 6, y: topPad + CGFloat(i) * lh, width: gutterWidth - 15, height: lh)
                 gutterContent.addSubview(label)
                 gutterLabels.append(label)
             }
 
-            let totalH = topPad + CGFloat(count) * lh + 8
+            // Ensure gutter content is tall enough for scrolling
+            let minHeight = textView.bounds.height + textView.contentOffset.y
+            let totalH = max(topPad + CGFloat(count) * lh + 8, minHeight)
             gutterContent.frame = CGRect(x: 0, y: 0, width: gutterWidth, height: totalH)
         }
 
@@ -284,6 +335,7 @@ struct CodeEditor: UIViewRepresentable {
 
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text
+            applyHighlighting()
             rebuildGutter()
         }
 

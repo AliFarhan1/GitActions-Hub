@@ -494,12 +494,26 @@ struct BuildLogsView: View {
     @State private var showErrorsOnly = false
     @State private var copiedError: String? = nil
     @State private var scrollToError = false
+    @State private var selectedFilter: LogFilter = .all
+    
+    enum LogFilter: String, CaseIterable {
+        case all = "All"
+        case errors = "Errors"
+        case warnings = "Warnings"
+    }
     
     var filteredLogs: [BuildLog] {
         var result = logs
-        if showErrorsOnly {
-            result = result.filter { $0.type == .error || $0.type == .warning }
+        
+        switch selectedFilter {
+        case .all:
+            break
+        case .errors:
+            result = result.filter { $0.type == .error }
+        case .warnings:
+            result = result.filter { $0.type == .warning }
         }
+        
         if !searchText.isEmpty {
             result = result.filter { $0.content.localizedCaseInsensitiveContains(searchText) }
         }
@@ -508,6 +522,8 @@ struct BuildLogsView: View {
     
     var errorCount: Int { logs.filter { $0.type == .error }.count }
     var warningCount: Int { logs.filter { $0.type == .warning }.count }
+    var lineCount: Int { logs.count }
+    var filteredCount: Int { filteredLogs.count }
     
     var body: some View {
         ZStack {
@@ -530,29 +546,51 @@ struct BuildLogsView: View {
                         
                         Spacer()
                         
-                        Button {
-                            let errors = logs.filter { $0.type == .error }.map { "L\($0.lineNumber): \($0.content)" }.joined(separator: "\n")
-                            UIPasteboard.general.string = errors
-                            copiedError = "Copied \(errorCount) errors"
+                        Menu {
+                            Button {
+                                let allLogs = logs.map { "L\($0.lineNumber): \($0.content)" }.joined(separator: "\n")
+                                UIPasteboard.general.string = allLogs
+                                copiedError = "Copied \(logs.count) lines"
+                            } label: {
+                                Label("All Lines", systemImage: "doc.on.doc")
+                            }
+                            
+                            Button {
+                                let errors = logs.filter { $0.type == .error }.map { "L\($0.lineNumber): \($0.content)" }.joined(separator: "\n")
+                                UIPasteboard.general.string = errors
+                                copiedError = "Copied \(errorCount) errors"
+                            } label: {
+                                Label("Errors Only (\(errorCount))", systemImage: "exclamationmark.triangle")
+                            }
+                            
+                            Button {
+                                let warnings = logs.filter { $0.type == .warning }.map { "L\($0.lineNumber): \($0.content)" }.joined(separator: "\n")
+                                UIPasteboard.general.string = warnings
+                                copiedError = "Copied \(warningCount) warnings"
+                            } label: {
+                                Label("Warnings Only (\(warningCount))", systemImage: "exclamationmark.circle")
+                            }
                         } label: {
                             Image(systemName: "doc.on.doc.fill")
                                 .font(.system(size: 18))
                                 .foregroundColor(AppColors.accent)
                         }
-                        .disabled(errorCount == 0)
                     }
                     
                     HStack(spacing: 10) {
                         LogStatBadge(count: errorCount, label: "Error", color: Color(hex: "#FF6B6B"), icon: "exclamationmark.triangle.fill")
                         LogStatBadge(count: warningCount, label: "Warning", color: Color(hex: "#FFD93D"), icon: "exclamationmark.circle.fill")
-                        LogStatBadge(count: logs.count, label: "Lines", color: AppColors.textSecondary, icon: "text.alignleft")
+                        LogStatBadge(count: filteredCount, label: "Lines", color: AppColors.textSecondary, icon: "text.alignleft")
                         
                         Spacer()
                         
-                        Toggle("Errors only", isOn: $showErrorsOnly)
-                            .toggleStyle(SwitchToggleStyle(tint: AppColors.accentSecondary))
-                            .font(.system(size: 12))
-                            .foregroundColor(AppColors.textSecondary)
+                        Picker("Filter", selection: $selectedFilter) {
+                            ForEach(LogFilter.allCases, id: \.self) { filter in
+                                Text(filter.rawValue).tag(filter)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 180)
                     }
                     
                     HStack {
