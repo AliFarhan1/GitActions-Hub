@@ -411,7 +411,7 @@ struct CodeEditor: UIViewRepresentable {
 
             if let rx = try? NSRegularExpression(pattern: "\\bfunc\\s+(\\w+)") {
                 rx.enumerateMatches(in: raw, range: fullRange) { match, _, _ in
-                    if let mr = match?.rangeAt(1) {
+                    if let mr = match?.range(at: 1) {
                         s.addAttribute(.foregroundColor, value: defColor, range: mr)
                     }
                 }
