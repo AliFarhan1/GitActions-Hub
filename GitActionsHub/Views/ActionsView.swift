@@ -17,18 +17,14 @@ struct ActionsView: View {
                 AnimatedGradientBackground()
                 
                 VStack(spacing: 0) {
-                    // Header
                     actionsHeader
                     
                     if let repo = selectedRepo {
-                        // Active Repo Content
                         ScrollView {
                             LazyVStack(spacing: 16) {
-                                // Stats Row
                                 statsRow
                                     .padding(.horizontal)
                                 
-                                // Workflow Runs
                                 VStack(alignment: .leading, spacing: 12) {
                                     SectionHeader(
                                         title: "Workflow Runs",
@@ -41,8 +37,8 @@ struct ActionsView: View {
                                     } else if gitHubService.workflowRuns.isEmpty {
                                         EmptyStateView(
                                             icon: "bolt.slash.circle",
-                                            title: "لا توجد Runs",
-                                            subtitle: "لم يتم تشغيل أي Actions حتى الآن"
+                                            title: "No Runs",
+                                            subtitle: "No Actions have been run yet"
                                         )
                                     } else {
                                         ForEach(gitHubService.workflowRuns) { run in
@@ -65,12 +61,11 @@ struct ActionsView: View {
                             )
                         }
                     } else {
-                        // No repo selected
                         Spacer()
                         EmptyStateView(
                             icon: "square.stack.3d.up",
-                            title: "اختر Repository",
-                            subtitle: "اضغط على الزر أعلاه لاختيار مستودع"
+                            title: "Select Repository",
+                            subtitle: "Tap the button above to select a repository"
                         )
                         Spacer()
                     }
@@ -109,14 +104,13 @@ struct ActionsView: View {
                     .font(.system(size: 28, weight: .black))
                     .foregroundColor(AppColors.text)
                 
-                Text("مراقبة CI/CD")
+                Text("CI/CD Monitor")
                     .font(.system(size: 13))
                     .foregroundColor(AppColors.textSecondary)
             }
             
             Spacer()
             
-            // Auto refresh toggle
             Button {
                 autoRefresh.toggle()
                 if autoRefresh, let repo = selectedRepo {
@@ -131,14 +125,13 @@ struct ActionsView: View {
                     .glow(color: autoRefresh ? AppColors.accent : .clear, radius: 6)
             }
             
-            // Repo selector
             Button {
                 showRepoSelector = true
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.down.circle.fill")
                         .font(.system(size: 14))
-                    Text(selectedRepo?.name ?? "اختر Repo")
+                    Text(selectedRepo?.name ?? "Select Repo")
                         .font(.system(size: 13, weight: .semibold))
                         .lineLimit(1)
                 }
@@ -165,10 +158,10 @@ struct ActionsView: View {
         let inProgress = runs.filter { $0.status == "in_progress" }.count
         
         return HStack(spacing: 10) {
-            StatCard(value: "\(runs.count)", label: "إجمالي", color: AppColors.accent, icon: "bolt.fill")
-            StatCard(value: "\(successCount)", label: "نجاح", color: Color(hex: "#6BCB77"), icon: "checkmark.circle.fill")
-            StatCard(value: "\(failureCount)", label: "فشل", color: Color(hex: "#FF6B6B"), icon: "xmark.circle.fill")
-            StatCard(value: "\(inProgress)", label: "جارٍ", color: Color(hex: "#FFD93D"), icon: "arrow.clockwise")
+            StatCard(value: "\(runs.count)", label: "Total", color: AppColors.accent, icon: "bolt.fill")
+            StatCard(value: "\(successCount)", label: "Success", color: Color(hex: "#6BCB77"), icon: "checkmark.circle.fill")
+            StatCard(value: "\(failureCount)", label: "Failed", color: Color(hex: "#FF6B6B"), icon: "xmark.circle.fill")
+            StatCard(value: "\(inProgress)", label: "Running", color: Color(hex: "#FFD93D"), icon: "arrow.clockwise")
         }
     }
     
@@ -194,7 +187,6 @@ struct WorkflowRunCard: View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
-                    // Status Icon
                     ZStack {
                         Circle()
                             .fill(run.statusColor.opacity(0.15))
@@ -244,7 +236,6 @@ struct WorkflowRunCard: View {
                     }
                 }
                 
-                // SHA
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.left.forwardslash.chevron.right")
                         .font(.system(size: 10))
@@ -275,10 +266,10 @@ struct WorkflowRunCard: View {
         guard let date = formatter.date(from: dateString) else { return dateString }
         
         let interval = Date().timeIntervalSince(date)
-        if interval < 60 { return "الآن" }
-        if interval < 3600 { return "\(Int(interval/60))د" }
-        if interval < 86400 { return "\(Int(interval/3600))س" }
-        return "\(Int(interval/86400))ي"
+        if interval < 60 { return "Now" }
+        if interval < 3600 { return "\(Int(interval/60))m" }
+        if interval < 86400 { return "\(Int(interval/3600))h" }
+        return "\(Int(interval/86400))d"
     }
 }
 
@@ -298,7 +289,6 @@ struct RunDetailView: View {
             AppColors.background.ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // Header
                 HStack {
                     Button {
                         dismiss()
@@ -330,12 +320,11 @@ struct RunDetailView: View {
                 
                 ScrollView {
                     VStack(spacing: 16) {
-                        // Actions
                         HStack(spacing: 10) {
                             if run.status == "in_progress" {
                                 ActionButton(
                                     icon: "stop.circle.fill",
-                                    label: "إلغاء",
+                                    label: "Cancel",
                                     color: .orange
                                 ) {
                                     Task {
@@ -346,7 +335,7 @@ struct RunDetailView: View {
                             } else {
                                 ActionButton(
                                     icon: "arrow.counterclockwise.circle.fill",
-                                    label: "إعادة تشغيل",
+                                    label: "Re-run",
                                     color: AppColors.accent
                                 ) {
                                     Task {
@@ -358,7 +347,7 @@ struct RunDetailView: View {
                             
                             ActionButton(
                                 icon: "doc.text.fill",
-                                label: "السجلات",
+                                label: "Logs",
                                 color: Color(hex: "#6BCB77")
                             ) {
                                 if let job = gitHubService.workflowJobs.first {
@@ -369,9 +358,8 @@ struct RunDetailView: View {
                         }
                         .padding(.horizontal)
                         
-                        // Jobs
                         VStack(alignment: .leading, spacing: 10) {
-                            SectionHeader(title: "Jobs", subtitle: "\(gitHubService.workflowJobs.count) مهام")
+                            SectionHeader(title: "Jobs", subtitle: "\(gitHubService.workflowJobs.count) tasks")
                                 .padding(.horizontal)
                             
                             ForEach(gitHubService.workflowJobs) { job in
@@ -448,13 +436,12 @@ struct JobCard: View {
                         .foregroundColor(AppColors.textSecondary)
                 }
                 
-                // Steps
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(job.steps.prefix(5)) { step in
                         StepRow(step: step)
                     }
                     if job.steps.count > 5 {
-                        Text("+ \(job.steps.count - 5) خطوات أخرى")
+                        Text("+ \(job.steps.count - 5) more steps")
                             .font(.system(size: 11))
                             .foregroundColor(AppColors.textSecondary)
                             .padding(.leading, 20)
@@ -527,7 +514,6 @@ struct BuildLogsView: View {
             AppColors.background.ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // Header
                 VStack(spacing: 12) {
                     HStack {
                         Button { dismiss() } label: {
@@ -544,11 +530,10 @@ struct BuildLogsView: View {
                         
                         Spacer()
                         
-                        // Copy all errors button
                         Button {
                             let errors = logs.filter { $0.type == .error }.map { "L\($0.lineNumber): \($0.content)" }.joined(separator: "\n")
                             UIPasteboard.general.string = errors
-                            copiedError = "تم نسخ \(errorCount) أخطاء"
+                            copiedError = "Copied \(errorCount) errors"
                         } label: {
                             Image(systemName: "doc.on.doc.fill")
                                 .font(.system(size: 18))
@@ -557,25 +542,23 @@ struct BuildLogsView: View {
                         .disabled(errorCount == 0)
                     }
                     
-                    // Stats bar
                     HStack(spacing: 10) {
-                        LogStatBadge(count: errorCount, label: "خطأ", color: Color(hex: "#FF6B6B"), icon: "exclamationmark.triangle.fill")
-                        LogStatBadge(count: warningCount, label: "تحذير", color: Color(hex: "#FFD93D"), icon: "exclamationmark.circle.fill")
-                        LogStatBadge(count: logs.count, label: "سطر", color: AppColors.textSecondary, icon: "text.alignleft")
+                        LogStatBadge(count: errorCount, label: "Error", color: Color(hex: "#FF6B6B"), icon: "exclamationmark.triangle.fill")
+                        LogStatBadge(count: warningCount, label: "Warning", color: Color(hex: "#FFD93D"), icon: "exclamationmark.circle.fill")
+                        LogStatBadge(count: logs.count, label: "Lines", color: AppColors.textSecondary, icon: "text.alignleft")
                         
                         Spacer()
                         
-                        Toggle("أخطاء فقط", isOn: $showErrorsOnly)
+                        Toggle("Errors only", isOn: $showErrorsOnly)
                             .toggleStyle(SwitchToggleStyle(tint: AppColors.accentSecondary))
                             .font(.system(size: 12))
                             .foregroundColor(AppColors.textSecondary)
                     }
                     
-                    // Search
                     HStack {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(AppColors.textSecondary)
-                        TextField("بحث في السجلات...", text: $searchText)
+                        TextField("Search logs...", text: $searchText)
                             .font(.system(size: 13, design: .monospaced))
                             .foregroundColor(AppColors.text)
                     }
@@ -591,7 +574,6 @@ struct BuildLogsView: View {
                 
                 Divider().background(AppColors.border)
                 
-                // Logs
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 1) {
                         ForEach(filteredLogs) { log in
@@ -633,14 +615,12 @@ struct LogLineView: View {
     
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            // Line number
             Text("\(log.lineNumber)")
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundColor(Color(hex: "#555570"))
                 .frame(width: 48, alignment: .trailing)
                 .padding(.trailing, 12)
             
-            // Icon for special types
             if let icon = log.type.icon {
                 Image(systemName: icon)
                     .font(.system(size: 10))
@@ -652,14 +632,12 @@ struct LogLineView: View {
                 Spacer().frame(width: 20)
             }
             
-            // Content
             Text(log.content)
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundColor(log.type.color)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
             
-            // Copy button for errors
             if log.type == .error || log.type == .warning {
                 Button {
                     UIPasteboard.general.string = "L\(log.lineNumber): \(log.content)"
@@ -792,7 +770,7 @@ struct LoadingCard: View {
         HStack(spacing: 12) {
             ProgressView()
                 .progressViewStyle(CircularProgressViewStyle(tint: AppColors.accent))
-            Text("جارٍ التحميل...")
+            Text("Loading...")
                 .font(.system(size: 14))
                 .foregroundColor(AppColors.textSecondary)
         }
@@ -825,11 +803,10 @@ struct RepoSelectorSheet: View {
                 AppColors.background.ignoresSafeArea()
                 
                 VStack(spacing: 0) {
-                    // Search
                     HStack {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(AppColors.textSecondary)
-                        TextField("بحث...", text: $search)
+                        TextField("Search...", text: $search)
                             .foregroundColor(AppColors.text)
                     }
                     .padding(12)
@@ -876,11 +853,11 @@ struct RepoSelectorSheet: View {
                     .scrollContentBackground(.hidden)
                 }
             }
-            .navigationTitle("اختر Repository")
+            .navigationTitle("Select Repository")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("إغلاق") { dismiss() }
+                    Button("Close") { dismiss() }
                         .foregroundColor(AppColors.accent)
                 }
             }
