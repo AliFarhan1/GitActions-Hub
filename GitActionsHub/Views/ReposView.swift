@@ -17,12 +17,12 @@ struct ReposView: View {
     
     enum ViewMode { case repos, files }
     
-    enum SortOption: String, CaseIterable { case updated = "Updated", case name = "Name", case stars = "Stars" }
+    enum SortOption: String, CaseIterable { case updated = "Updated", byName = "Name", stars = "Stars" }
 
     var filteredRepos: [GitHubRepo] {
         var repos = gitHubService.repositories
         if !searchText.isEmpty { repos = repos.filter { $0.name.localizedCaseInsensitiveContains(searchText) || ($0.description?.localizedCaseInsensitiveContains(searchText) ?? false) } }
-        switch sortOption { case .name: return repos.sorted { $0.name < $1.name }; case .stars: return repos.sorted { $0.stargazersCount > $1.stargazersCount }; default: return repos }
+        switch sortOption { case .byName: return repos.sorted { $0.name < $1.name }; case .stars: return repos.sorted { $0.stargazersCount > $1.stargazersCount }; default: return repos }
     }
     
     var body: some View {
