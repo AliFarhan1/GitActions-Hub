@@ -692,3 +692,73 @@ struct ProfileView: View {
         }
     }
 }
+
+// MARK: - File Editor View
+struct FileEditorView: View {
+    let file: GitFile
+    let content: String
+    let onSave: (String) -> Void
+
+    @State private var text: String
+    @State private var hasChanges = false
+    @Environment(\.dismiss) var dismiss
+
+    init(file: GitFile, content: String, onSave: @escaping (String) -> Void) {
+        self.file = file
+        self.content = content
+        self.onSave = onSave
+        _text = State(initialValue: content)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color(hex: "#080810").ignoresSafeArea()
+                
+                VStack(spacing: 0) {
+                    HStack {
+                        Image(systemName: file.icon)
+                            .foregroundColor(file.iconColor)
+                        Text(file.name)
+                            .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                            .foregroundColor(AppColors.text)
+                        if hasChanges {
+                            Circle().fill(Color(hex: "#FFD93D")).frame(width: 6, height: 6)
+                        }
+                        Spacer()
+                    }
+                    .padding()
+                    .background(AppColors.surface)
+
+                    ScrollView {
+                        TextEditor(text: Binding(
+                            get: { text },
+                            set: { text = $0; hasChanges = true }
+                        ))
+                        .font(.system(size: 14, design: .monospaced))
+                        .foregroundColor(AppColors.text)
+                        .padding(8)
+                    }
+                }
+            }
+            .navigationTitle("").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") { dismiss() }.foregroundColor(AppColors.textSecondary)
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        onSave(text)
+                        hasChanges = false
+                        dismiss()
+                    } label: {
+                        Text("Save").font(.system(size: 14, weight: .bold))
+                            .foregroundColor(hasChanges ? AppColors.accent : AppColors.textSecondary)
+                    }
+                    .disabled(!hasChanges)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+}

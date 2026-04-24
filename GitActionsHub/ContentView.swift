@@ -11,7 +11,6 @@ struct ContentView: View {
                 case .actions: ActionsView()
                 case .repos:   ReposView()
                 case .files:   FilesView()
-                case .profile: ProfileView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
