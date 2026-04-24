@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 struct GitHubUser: Codable, Identifiable {
     let id: Int
@@ -182,7 +183,6 @@ struct GitFile: Identifiable {
 }
 
 import SwiftUI
-import Color
 
 extension Color {
     init(hex: String) {
