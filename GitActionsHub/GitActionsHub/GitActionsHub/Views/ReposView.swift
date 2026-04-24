@@ -110,7 +110,6 @@ struct ReposView: View {
             }
         }
         .padding(16).background(AppColors.surface).clipShape(RoundedRectangle(cornerRadius: 12))
-        .onLongPressGesture { selectedRepo = repo; showContextMenu = true }
     }
     
     var filesList: some View {
@@ -158,50 +157,32 @@ struct ReposView: View {
         isImporting = true; importStatus = "Fetching \(repo.name)..."
         Task {
             do {
-                let (files, skipped) = try await gitHubService.fetchAndSaveRepoFiles(
-                    owner: user.login, 
-                    repo: repo.name, 
-                    branch: repo.defaultBranch,
-                    savePath: LocalFileManager.appDocumentsURL
-                )
-                await MainActor.run {
-                    fileManager.loadFiles(at: LocalFileManager.appDocumentsURL)
-                    mode = 1
-                    isImporting = false
-                    if skipped > 0 {
-                        importStatus = "\(files) files imported, \(skipped) binary skipped!"
-                    } else {
-                        importStatus = "\(files) files imported!"
-                    }
+                let files = try await gitHubService.fetchRepoTree(owner: user.login, repo: repo.name, branch: repo.defaultBranch)
+                let folder = LocalFileManager.appDocumentsURL.appendingPathComponent(repo.name, isDirectory: true)
+                try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                for f in files {
+                    let path = folder.appendingPathComponent(f.path)
+                    try? FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try? f.content.write(to: path, atomically: true, encoding: .utf8)
                 }
-            } catch { 
-                await MainActor.run { isImporting = false; importStatus = "Error: \(error.localizedDescription)" } 
-            }
+                await MainActor.run { fileManager.loadFiles(at: LocalFileManager.appDocumentsURL); mode = 1; isImporting = false; importStatus = "\(files.count) files imported!" }
+            } catch { await MainActor.run { isImporting = false; importStatus = "Error: \(error.localizedDescription)" } }
         }
     }
     
     func contextMenuView(_ repo: GitHubRepo) -> some View {
         ZStack(alignment: .bottom) {
-            GlassmorphicSheet()
-                .onTapGesture { showContextMenu = false }
-            VStack(spacing: 16) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(repo.name).font(.system(size: 18, weight: .bold)).foregroundColor(AppColors.text)
-                        if let d = repo.description { Text(d).font(.system(size: 12)).foregroundColor(AppColors.textSecondary).lineLimit(2) }
-                    }
-                    Spacer()
-                    Button { showContextMenu = false } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 24)).foregroundColor(AppColors.textSecondary) }
-                }
-                Divider().background(AppColors.border)
-                VStack(spacing: 12) {
+            Color.black.opacity(0.5).ignoresSafeArea().onTapGesture { showContextMenu = false }
+            VStack(spacing: 0) {
+                HStack { Text(repo.name).font(.system(size: 16, weight: .bold)).foregroundColor(AppColors.text); Spacer(); Button { showContextMenu = false } label: { Image(systemName: "xmark.circle.fill").foregroundColor(AppColors.textSecondary) } }
+                .padding().background(AppColors.surface)
+                VStack(spacing: 8) {
                     menuBtn(icon: "arrow.down.circle.fill", color: Color(hex: "#6BCB77"), label: "Import to Files") { importRepoFiles(repo); showContextMenu = false }
                     menuBtn(icon: "safari.fill", color: AppColors.accent, label: "Open in Browser") { if let u = URL(string: repo.htmlUrl) { UIApplication.shared.open(u) }; showContextMenu = false }
                     menuBtn(icon: "doc.on.doc.fill", color: Color(hex: "#C77DFF"), label: "Copy Clone URL") { UIPasteboard.general.string = repo.cloneUrl; showContextMenu = false }
                     menuBtn(icon: "trash.fill", color: Color(hex: "#FF6B6B"), label: "Delete Repository") { showContextMenu = false; selectedRepo = repo; showDeleteAlert = true }
-                }
-            }
-            .padding(24)
+                }.padding().background(AppColors.surface)
+            }.padding(.horizontal, 20).padding(.bottom, 20)
         }
     }
     
@@ -211,7 +192,7 @@ struct ReposView: View {
                 Image(systemName: icon).font(.system(size: 20)).foregroundColor(color)
                 Text(label).font(.system(size: 15, weight: .medium)).foregroundColor(AppColors.text)
                 Spacer()
-            }.padding(.vertical, 14).padding(.horizontal, 16).background(color.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 12))
+            }.padding(.vertical, 14).padding(.horizontal, 16).background(color.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 12))
         }
     }
     
@@ -268,16 +249,5 @@ struct ReposView: View {
     func deleteRepo() {
         guard let repo = selectedRepo else { return }
         Task { await gitHubService.deleteRepository(repo: repo); await MainActor.run { selectedRepo = nil } }
-    }
-}
-
-struct GlassmorphicSheet: View {
-    var body: some View {
-        VStack {
-            Spacer()
-            Color.black.opacity(0.3)
-                .background(.ultraThinMaterial)
-                .ignoresSafeArea()
-        }
     }
 }

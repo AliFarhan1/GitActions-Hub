@@ -219,63 +219,6 @@ class GitHubService: ObservableObject {
         try await fetchContents(path: "")
         return allFiles
     }
-    
-    func fetchAndSaveRepoFiles(owner: String, repo: String, branch: String, savePath: URL) async throws -> (textFiles: Int, binarySkipped: Int) {
-        struct ContentsResponse: Codable {
-            let type: String
-            let name: String
-            let path: String
-            let content: String?
-            let sha: String?
-            let size: Int?
-            enum CodingKeys: String, CodingKey {
-                case type, name, path, content, sha, size
-            }
-        }
-        
-        let textExtensions = ["swift", "js", "ts", "json", "xml", "html", "css", "md", "txt", "yml", "yaml", "py", "sh", "rb", "go", "rs", "java", "kt", "c", "cpp", "h", "hpp", "sql", "php", "pl", "txt", "log", "env", "gitignore", "editorconfig", "prettierrc", "eslintrc"]
-        let binaryExtensions = ["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "pdf", "zip", "tar", "gz", "rar", "7z", "exe", "dmg", "app", "ipa", "aab", "mp3", "mp4", "wav", "mov", "avi", "ttf", "otf", "woff", "woff2", "eot", "dll", "so", "a", "o", "obj", "pyc"]
-        
-        var textFilesCount = 0
-        var binarySkippedCount = 0
-        
-        func fetchContents(path: String) async throws {
-            let endpoint = "/repos/\(owner)/\(repo)/contents/\(path)?ref=\(branch)"
-            let contents: [ContentsResponse] = try await makeRequest(endpoint: endpoint)
-            
-            for item in contents {
-                if item.type == "dir" {
-                    try await fetchContents(path: item.path)
-                } else if item.type == "file" {
-                    let fileExt = (item.name as NSString).pathExtension.lowercased()
-                    let isBinary = binaryExtensions.contains(fileExt)
-                    let isLikelyText = textExtensions.contains(fileExt) || item.name.contains(".")
-                    let hasContent = item.content != nil
-                    
-                    if isBinary || (!isLikelyText && !hasContent) {
-                        binarySkippedCount += 1
-                        continue
-                    }
-                    
-                    if let contentB64 = item.content {
-                        let cleanContent = contentB64
-                            .replacingOccurrences(of: "\n", with: "")
-                            .replacingOccurrences(of: "\r", with: "")
-                        if let data = Data(base64Encoded: cleanContent),
-                           let decoded = String(data: data, encoding: .utf8) {
-                            let filePath = savePath.appendingPathComponent(item.path)
-                            try? FileManager.default.createDirectory(at: filePath.deletingLastPathComponent(), withIntermediateDirectories: true)
-                            try? decoded.write(to: filePath, atomically: true, encoding: .utf8)
-                            textFilesCount += 1
-                        }
-                    }
-                }
-            }
-        }
-        
-        try await fetchContents(path: "")
-        return (textFilesCount, binarySkippedCount)
-    }
 }
 
 struct RepoFile: Identifiable {
