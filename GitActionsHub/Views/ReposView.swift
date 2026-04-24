@@ -247,7 +247,9 @@ struct ReposView: View {
     var editorView: some View {
         Group {
             if let f = fileManager.selectedFile {
-                FileEditorView(file: f, content: fileManager.fileContent) { fileManager.writeFile(f, content: $0) }
+                FileEditorView(file: f, content: Binding(get: { fileManager.fileContent }, set: { _ in }), onSave: { newContent in
+                    fileManager.writeFile(f, content: newContent)
+                })
             }
         }
     }
