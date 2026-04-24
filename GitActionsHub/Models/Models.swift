@@ -1,22 +1,15 @@
 import Foundation
-import SwiftUI
-
-// MARK: - GitHub Models
 
 struct GitHubUser: Codable, Identifiable {
     let id: Int
     let login: String
+    let avatarUrl: String?
     let name: String?
-    let avatarUrl: String
-    let publicRepos: Int
-    let followers: Int
-    let following: Int
+    let bio: String?
     
     enum CodingKeys: String, CodingKey {
-        case id, login, name
+        case id, login, name, bio
         case avatarUrl = "avatar_url"
-        case publicRepos = "public_repos"
-        case followers, following
     }
 }
 
@@ -25,76 +18,77 @@ struct GitHubRepo: Codable, Identifiable {
     let name: String
     let fullName: String
     let description: String?
-    let isPrivate: Bool
     let htmlUrl: String
     let cloneUrl: String
-    let defaultBranch: String
-    let updatedAt: String
     let language: String?
     let stargazersCount: Int
+    let forksCount: Int
+    let isPrivate: Bool
+    let defaultBranch: String
+    let updatedAt: Date
+    let createdAt: Date
     
     enum CodingKeys: String, CodingKey {
         case id, name, description, language
         case fullName = "full_name"
-        case isPrivate = "private"
         case htmlUrl = "html_url"
         case cloneUrl = "clone_url"
+        case stargazersCount = "stargazers_count"
+        case forksCount = "forks_count"
+        case isPrivate = "private"
         case defaultBranch = "default_branch"
         case updatedAt = "updated_at"
-        case stargazersCount = "stargazers_count"
+        case createdAt = "created_at"
     }
 }
 
 struct WorkflowRun: Codable, Identifiable {
     let id: Int
-    let name: String?
+    let name: String
+    let headBranch: String
+    let headCommit: HeadCommit
     let status: String
     let conclusion: String?
-    let createdAt: String
-    let updatedAt: String
-    let htmlUrl: String
-    let headBranch: String
-    let headSha: String
+    let createdAt: Date
+    let updatedAt: Date
     let runNumber: Int
     let event: String
+    let actor: Actor?
+    let workflowId: Int
     
     enum CodingKeys: String, CodingKey {
-        case id, name, status, conclusion, event
+        case id, name, status, conclusion, event, actor
+        case headBranch = "head_branch"
+        case headCommit = "head_commit"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
-        case htmlUrl = "html_url"
-        case headBranch = "head_branch"
-        case headSha = "head_sha"
         case runNumber = "run_number"
+        case workflowId = "workflow_id"
     }
     
-    var statusColor: Color {
-        switch status {
-        case "completed":
-            switch conclusion {
-            case "success": return .green
-            case "failure": return .red
-            case "cancelled": return .orange
-            default: return .gray
-            }
-        case "in_progress": return .blue
-        case "queued": return .yellow
-        default: return .gray
+    struct HeadCommit: Codable {
+        let id: String
+        let message: String
+        let author: Author
+        
+        enum CodingKeys: String, CodingKey {
+            case id, message, author
+        }
+        
+        struct Author: Codable {
+            let name: String
+            let email: String
         }
     }
     
-    var statusIcon: String {
-        switch status {
-        case "completed":
-            switch conclusion {
-            case "success": return "checkmark.circle.fill"
-            case "failure": return "xmark.circle.fill"
-            case "cancelled": return "minus.circle.fill"
-            default: return "circle.fill"
-            }
-        case "in_progress": return "arrow.triangle.2.circlepath.circle.fill"
-        case "queued": return "clock.circle.fill"
-        default: return "circle.fill"
+    struct Actor: Codable {
+        let id: Int
+        let login: String
+        let avatarUrl: String?
+        
+        enum CodingKeys: String, CodingKey {
+            case id, login
+            case avatarUrl = "avatar_url"
         }
     }
 }
@@ -104,27 +98,30 @@ struct WorkflowJob: Codable, Identifiable {
     let name: String
     let status: String
     let conclusion: String?
-    let startedAt: String?
-    let completedAt: String?
-    let steps: [WorkflowStep]
+    let startedAt: Date?
+    let completedAt: Date?
+    let htmlUrl: String
+    let steps: [Step]
     
     enum CodingKeys: String, CodingKey {
         case id, name, status, conclusion, steps
         case startedAt = "started_at"
         case completedAt = "completed_at"
+        case htmlUrl = "html_url"
     }
-}
-
-struct WorkflowStep: Codable, Identifiable {
-    let name: String
-    let status: String
-    let conclusion: String?
-    let number: Int
     
-    var id: Int { number }
-    
-    enum CodingKeys: String, CodingKey {
-        case name, status, conclusion, number
+    struct Step: Codable, Identifiable {
+        let id: Int
+        let name: String
+        let status: String
+        let conclusion: String?
+        let number: Int
+        let startedAt: String?
+        
+        enum CodingKeys: String, CodingKey {
+            case id, name, status, conclusion, number
+            case startedAt = "started_at"
+        }
     }
 }
 
@@ -135,81 +132,58 @@ struct BuildLog: Identifiable {
     let type: LogLineType
     
     enum LogLineType {
-        case normal, error, warning, success, info, command
-        
-        var color: Color {
-            switch self {
-            case .normal: return Color(hex: "#E8E8E8")
-            case .error: return Color(hex: "#FF6B6B")
-            case .warning: return Color(hex: "#FFD93D")
-            case .success: return Color(hex: "#6BCB77")
-            case .info: return Color(hex: "#4D96FF")
-            case .command: return Color(hex: "#C77DFF")
-            }
-        }
-        
-        var icon: String? {
-            switch self {
-            case .error: return "exclamationmark.triangle.fill"
-            case .warning: return "exclamationmark.circle.fill"
-            case .success: return "checkmark.circle.fill"
-            case .command: return "chevron.right"
-            default: return nil
-            }
-        }
+        case normal, error, warning, success, command, info
     }
+}
+
+struct Workflow: Codable, Identifiable {
+    let id: Int
+    let name: String
+    let path: String
+    let state: String
 }
 
 struct GitFile: Identifiable {
     let id = UUID()
-    var name: String
-    var path: String
-    var isDirectory: Bool
-    var size: Int64
-    var modifiedDate: Date
-    var content: String?
-    var children: [GitFile]?
-    var isExpanded: Bool = false
+    let name: String
+    let path: String
+    let isDirectory: Bool
+    let size: Int64
+    let modifiedDate: Date?
     
     var icon: String {
         if isDirectory { return "folder.fill" }
-        switch (name as NSString).pathExtension.lowercased() {
+        let ext = (name as NSString).pathExtension.lowercased()
+        switch ext {
         case "swift": return "swift"
-        case "json": return "doc.text.fill"
-        case "md": return "doc.richtext.fill"
-        case "yml", "yaml": return "gearshape.fill"
-        case "png", "jpg", "jpeg": return "photo.fill"
-        case "sh": return "terminal.fill"
-        default: return "doc.fill"
+        case "js", "ts", "jsx", "tsx": return "curlybraces"
+        case "json", "xml", "yml", "yaml": return "doc.text"
+        case "html", "css", "scss": return "globe"
+        case "md", "txt", "doc": return "doc.text"
+        case "png", "jpg", "jpeg", "gif", "webp", "svg": return "photo"
+        case "pdf": return "doc.richtext"
+        case "zip", "tar", "gz", "rar": return "doc.zipper"
+        default: return "doc"
         }
     }
     
     var iconColor: Color {
         if isDirectory { return Color(hex: "#FFD93D") }
-        switch (name as NSString).pathExtension.lowercased() {
+        let ext = (name as NSString).pathExtension.lowercased()
+        switch ext {
         case "swift": return Color(hex: "#F05138")
-        case "json": return Color(hex: "#4D96FF")
-        case "md": return Color(hex: "#6BCB77")
-        case "yml", "yaml": return Color(hex: "#C77DFF")
-        case "png", "jpg", "jpeg": return Color(hex: "#FF6B6B")
-        case "sh": return Color(hex: "#6BCB77")
-        default: return Color(hex: "#9E9E9E")
+        case "js", "ts": return Color(hex: "#F7DF1E")
+        case "json", "xml", "yml": return Color(hex: "#6BCB77")
+        case "md", "txt": return Color(hex: "#C77DFF")
+        case "png", "jpg", "gif": return Color(hex: "#FF6B6B")
+        default: return AppColors.textSecondary
         }
     }
 }
 
-struct CommitInfo: Identifiable {
-    let id = UUID()
-    var message: String
-    var files: [String]
-    var branch: String
-    var timestamp: Date
-    var sha: String?
-    var authorName: String?
-    var authorEmail: String?
-}
+import SwiftUI
+import Color
 
-// MARK: - Color Extension
 extension Color {
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
@@ -224,12 +198,8 @@ extension Color {
         case 8:
             (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
         default:
-            (a, r, g, b) = (255, 0, 0, 0)
+            (a, r, g, b) = (1, 1, 1, 0)
         }
-        self.init(.sRGB,
-            red: Double(r) / 255,
-            green: Double(g) / 255,
-            blue: Double(b) / 255,
-            opacity: Double(a) / 255)
+        self.init(.sRGB, red: Double(r) / 255, green: Double(g) / 255, blue: Double(b) / 255, opacity: Double(a) / 255)
     }
 }
